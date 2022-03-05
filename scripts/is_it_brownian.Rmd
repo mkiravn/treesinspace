@@ -1,0 +1,306 @@
+---
+title: "Is it brownian?"
+author: "MK Ianni-Ravn"
+date: "04/03/2022"
+output: html_document
+---
+
+
+```{r}
+devtools::load_all("~/slendr")
+setup_env()
+check_env()
+library(ape)
+library(ggtree)
+library(cowplot)
+library(tidyverse)
+library(sf)
+library(MetBrewer)
+```
+
+
+First, let's set up the simulation. In a real Brownian motion in 2d, particles walk in x and y dimensions, taking steps drawn from a normal distribution of mean 0 and sd 1. Martin and I implemented a new dispersal function `brownian` which is designed to recapitulate this. When making offspring, slendr does the following:
+
+1. Find a mate somewhere within the `mate_dist`.
+2. Randomly pick one of the parents and disperse the child independently in x and y following a normal distribution.
+
+Note 1: If the mating distance is small enough, the fact that children can be dispersed from either parent should (hopefully) not be super problematic. But we can check this...
+Note 2: there is another parameter called `competition_dist`, which determines within how large of a radius individuals compete for resources. For this purpose it's probably best to use a small competition distance, otherwise the individuals break up into small clusters over generations (see Martin's vignette at https://www.slendr.net/articles/vignette-03-interactions.html).
+
+
+```{r}
+# setting some parameters
+disp_f <- "brownian"
+comp_d <- 0
+mate_d <- 1
+disp_d <- 1
+# making a landscape...
+map <-
+  world(
+    xrange = c(1, 100),
+    yrange = c(1, 100),
+    landscape = "blank"
+  )
+# defining the population
+pop <- population(
+  "POP",
+  time = 1,
+  N = 500,
+  dispersal_fun = disp_f,
+  competition_dist = comp_d ,
+  mate_dist = mate_d,
+  dispersal_dist = disp_d,
+  center = c(50, 50),
+  radius = 50,
+  map = map
+)
+```
+
+`
+Now, let's make and run out model. Here, I just care about the tree so I'll simulate a non-recombining locus of length 1. I added a new option, `retainall`, which if set to `True` will tell slim to remember every individual in the tree- not just the nodes. This will let us track everyone in a lineage and look at dispersal more directly.
+
+```{r}
+# how many gens?
+gens <- 500
+# make the model
+model <- compile(
+  populations = pop,
+  generation_time = 1,
+  sim_length = gens,
+  resolution = 0.5
+)
+# who should we sample?
+samples <- sampling(model, times = gens, list(pop, 10))
+# run model
+slim(
+  model,
+  sequence_length = 1,
+  recombination_rate = 0, # one tree locus
+  method = "batch",
+  random_seed = 42,
+  retainall=TRUE, # a new option
+  sampling = samples
+)
+```
+
+Let's load some stuff up! Question here: are we keeping..... everyone..... because we're not simplifying...?
+
+```{r}
+# now let's play with all the remembered nodes
+tsu <- ts_load(model) 
+nds <- tsu %>% ts_nodes()
+edg <- tsu %>% ts_edges() %>% rename("edge_id"="id")
+dat <- tsu %>% ts_data()
+dat %>% filter(!is.na(name))
+
+dat %>% filter(retained==TRUE)
+# extract data
+
+dat <- dat %>%
+  rowwise() %>%
+  mutate(x=unlist(location)[1],
+         y=unlist(location)[2]) %>%
+  ungroup()
+```
+
+Now we can investigate how the individuals are spreading. A first simple plot:
+
+```{r}
+# let's see how we're spread
+ggplot(dat)+
+  geom_point(aes(x=x,y=y,col=time))+
+  theme(legend.position="none") # this looks amazing!
+```
+Seems to check out! Let's see how they spread along the `x` dimension over time.
+
+```{r}
+# let's see how we're spread
+ggplot(dat) +
+  geom_density(aes(x=x,col=as.factor(time)))+
+  theme(legend.position="none") # this looks amazing!
+```
+
+This looks pretty good- we would expect there to be a gradual increase in the spread and it's what we're seeing. But let's also take a look at the standard deviations of the positions. 
+
+
+```{r}
+# and the standard devs over time
+dat %>% group_by(time) %>%
+  summarise(sdx=sd(x),sdy=sd(y)) %>%
+  pivot_longer(cols=c("sdx","sdy"),names_to="dim",values_to="sd") %>%
+  ggplot(aes(x=time,y=sd,col=dim)) +geom_point(size=0.1)+ geom_line(size=0.1)+geom_smooth(method="lm")
+```
+Here, I'm wondering why it's so spiky. But overall we see an increase, nice! Let's see how many nodes there are, over time. 
+
+```{r}
+dat %>% group_by(time) %>%
+  summarise(n=n()) %>%
+  ggplot(aes(x=time,y=n))+geom_point()
+```
+So everyone in the last generation is sampled, but back in time there's an exponential decrease. 
+
+I want to join all the information above to get a working network, where children are connected to their parents. I cannibalised some of Martin's code and tidyverse-d the rest. 
+
+```{r}
+# first we get all the nodes which are parents
+parent_nodes <- dat %>%
+  dplyr::as_tibble() %>%
+  dplyr::filter(node_id %in% edg$parent) %>% 
+  dplyr::select(parent_pop = pop,
+                parent_ind_id = ind_id, 
+                parent_node_id = node_id,
+                parent_time = time, parent_location = location) %>%
+  dplyr::left_join(edg, by = c("parent_node_id" = "parent")) %>%
+  dplyr::arrange(parent_node_id)
+# next we get all the nodes which are children
+branch_nodes <- dat %>%
+  dplyr::as_tibble() %>%
+  dplyr::filter(node_id %in% edg$child) %>%
+  dplyr::select(child_pop  = pop,
+                child_ind_id = ind_id,
+                child_node_id = node_id,
+                child_time = time, child_location = location) %>%
+  dplyr::inner_join(parent_nodes, by = c("child_node_id" = "child")) %>% # and smash the two dataframes together
+  dplyr::arrange(child_node_id)
+# get all the lines connecting the parent and child locations
+connections <- branch_nodes %>%
+  rowwise() %>%
+  mutate(pts=st_union(child_location,parent_location)) %>%
+  mutate(connection=st_cast(pts,"LINESTRING")) %>% ungroup()
+# let the branches hold the line information
+branches <- connections %>%
+  sf::st_set_geometry("connection")
+# let the connections hold the point position of the individuals
+connections <- connections %>% rowwise() %>%
+  mutate(edge_gens=child_time-parent_time,
+         # calculate the x and y displacements
+         disp=st_length(connection),
+         x_disp=unlist(child_location)[1]-unlist(parent_location)[1],
+         y_disp=unlist(child_location)[2]-unlist(parent_location)[2],
+         # and scale everything by generations
+         disp_pergen=disp/edge_gens,
+         x_disp_pergen=x_disp/edge_gens,
+         y_disp_pergen=y_disp/edge_gens) %>%
+  ungroup() %>%
+  sf::st_set_geometry("child_location")
+```
+
+Let's explore this data.
+
+```{r}
+branches %>%
+  ggplot(aes(col=as.factor(child_time)))+
+  geom_sf(alpha=0.5)+
+  geom_sf(data=connections,size=0.5)+
+  theme(legend.position = NULL) +
+  scale_color_manual(values=met.brewer("Hokusai2", n = gens+1))
+```
+Kind of checks out, the most recent individuals are more spread. We'll come back to a similar visualisation later. 
+
+```{r}
+# this however seems strange. Why do the terminal children have more than one connection...?
+branches %>%
+  ggplot(aes(col=child_time==gens+1))+
+  geom_sf(alpha=0.5)+
+  geom_sf(data=connections,size=0.5)+
+  theme(legend.position = NULL) # as does this!
+# here, we would expect edge lengths to be 1, given that we record everyone....
+connections %>% ggplot(aes(x=child_time,y=edge_gens))+geom_point() # this looks really bad
+# here, we would expect an x=y+1 sort of thing....
+connections %>% ggplot(aes(x=child_time,y=parent_time))+geom_point() # this looks really bad and really weird
+# here, we would expect no spatial clustering of edge generations- which should be 1 anyway
+connections %>% ggplot()+geom_sf(aes(col=edge_gens)) # this looks really bad
+# here, we want each child to appear twice, because of diploid-ness
+```
+
+Now I want to see one lineage walking in space. 
+
+```{r}
+### plotting the paths of a lineage
+# extract ancestors
+anc <- ts_ancestors(tsu,1) %>%
+  select(child_phylo_id=child_id,parent_time,child_time)
+# sf black magic
+anc <- anc %>%
+  rowwise() %>%
+  # some displacement calculations again
+  mutate(xd=unlist(connection)[2]-unlist(connection)[1],
+         yd=unlist(connection)[4]-unlist(connection)[3]) %>%
+  ungroup()
+# let's see it walk in space...
+ggplot(anc)+geom_sf(aes(col=child_time)) # this looks good
+```
+Do the steps look like we'd expect with a 2d Brownian motion?
+
+```{r}
+# and let's see how the dispersals are going!
+# predictions- should be normal
+brown <- data.frame(norm=rnorm(1000,0,1))
+# prepare for plotting...
+anc_longer <- anc %>% pivot_longer(cols=c("xd","yd"),
+                     names_to = "coord",
+                     values_to = "disp")
+# plot!
+ggplot(anc_longer)+geom_density(aes(x=disp,col=coord))+
+  geom_density(data=brown,aes(x=norm,col="2d Normal"),lty=2) # this looks great!
+```
+Sidenote: if you increase the competition distance, xd and yd start to spread out much more compared to expectation.
+
+Now, I want to see whether this agrees with the tree we get if we simplify the data. 
+
+```{r}
+### comparing to the simplified tree
+# load the tree sequence and simplify it
+ts <- ts_load(model) %>%
+  ts_recapitate(Ne = 500,recombination_rate = 0) %>%
+  ts_simplify()
+
+tree <- ts %>% ts_phylo(i=1)
+
+# let's check how these agree
+ts_ancestors(ts, 1) %>%
+  ggplot(aes(col=parent_time)) +
+  geom_sf(size=2) +geom_sf(data=anc,lty=2) # woohoo, this works!The two agree
+```
+
+
+Show the convex hull again
+
+```{r}
+dat <- dat %>%
+  group_by(time) %>%
+  summarize(geometry = st_union(location)) %>%
+  st_convex_hull() %>% 
+  mutate(area = st_area(geometry))
+```
+
+
+
+```{r}
+ggplot(dat,aes(x=time,y=sqrt(area))) +
+  geom_smooth(aes(x=time,y=sqrt(area)),method="loess",se=FALSE,alpha=0.1)+
+  geom_point(size=0.5) +
+  geom_line()+
+  theme_classic() +
+  ggtitle("Bounding Area- time")
+```
+
+```{r}
+plot <- ggplot(data=dat) +
+  ggtitle("Node Distribution") +
+  theme(axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank())+
+  theme_minimal() +
+  theme(legend.position="none")
+
+plot <- plot + geom_sf(alpha=0.1, aes(col=as.factor(time))) +
+  scale_color_manual(values=met.brewer("Hokusai2", n = gens+1))
+
+plot
+```
+
+
+
+
