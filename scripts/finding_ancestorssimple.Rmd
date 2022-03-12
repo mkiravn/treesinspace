@@ -1,0 +1,259 @@
+---
+title: "Finding Ancestors"
+author: "MK Ianni-Ravn"
+date: "05/03/2022"
+output: html_document
+---
+
+```{r}
+devtools::load_all("~/slendr")
+setup_env()
+check_env()
+library(ape)
+library(ggtree)
+library(cowplot)
+library(tidyverse)
+library(sf)
+library(MetBrewer)
+library(ggpubr)
+library(ggrepel)
+```
+
+```{r}
+# setting some parameters
+disp_f <- "brownian"
+comp_d <- 1
+mate_d <- 1
+disp_d <- 1
+
+# how many gens?
+gens <- 1000
+# how large a pop?
+N <- 100
+
+# making a landscape...
+map <-
+  world(
+    xrange = c(1, 100),
+    yrange = c(1, 100),
+    landscape = "blank"
+  )
+```
+
+`
+Now, let's make and run out model. Here, I just care about the tree so I'll simulate a non-recombining locus of length 1. I added a new option, `retainall`, which if set to `True` will tell slim to remember every individual in the tree- not just the nodes. This will let us track everyone in a lineage and look at dispersal more directly.
+
+```{r}
+# defining the population
+pop <- population(
+  "POP",
+  time = 1,
+  N = N,
+  center = c(50, 50),
+  radius = 50,
+  map = map,
+  mate_dist = mate_d,
+  competition_dist = comp_d,
+  dispersal_fun = disp_f,
+  dispersal_dist = disp_d
+)
+
+# make the model
+model <- compile(
+  populations = pop,
+  generation_time = 1,
+  sim_length = gens,
+  resolution = 0.5
+)
+# who should we sample?
+samples <- sampling(model, times = gens, list(pop, 50))
+# run model
+slim(
+  model,
+  sequence_length = 1,
+  recombination_rate = 0, # one tree locus
+  method = "batch",
+  random_seed = 50,
+  retainall=TRUE, # a new option
+  sampling = samples
+)
+
+# the full tree 
+tsu <- ts_load(model)
+# its data
+data <- tsu %>% ts_data() %>% as.data.frame()
+# the connections and branches
+res <- ts_connect(tsu)
+# the simplified tree 
+ts <- ts_load(model) %>%
+  ts_recapitate(Ne = N, recombination_rate = 0) %>%
+  ts_simplify()
+# the phylogenetic tree
+tree <- ts %>% ts_phylo(i=1)
+class(tree) <- "phylo"
+```
+
+
+```{r}
+# now let's play with all the remembered nodes
+tsu <- ts_load(model) 
+nds <- tsu %>% ts_nodes()
+edg <- tsu %>% ts_edges() %>% rename("edge_id"="id")
+dat <- tsu %>% ts_data()
+dat %>% filter(!is.na(name))
+
+dat %>% filter(retained==TRUE)
+# extract data
+
+dat <- dat %>%
+  rowwise() %>%
+  mutate(x=unlist(location)[1],
+         y=unlist(location)[2]) %>%
+  ungroup()
+# first we get all the nodes which are parents
+parent_nodes <- dat %>%
+  dplyr::as_tibble() %>%
+  dplyr::filter(node_id %in% edg$parent) %>% 
+  dplyr::select(parent_pop = pop,
+                parent_ind_id = ind_id, 
+                parent_node_id = node_id,
+                parent_time = time, parent_location = location) %>%
+  dplyr::left_join(edg, by = c("parent_node_id" = "parent")) %>%
+  dplyr::arrange(parent_node_id)
+# next we get all the nodes which are children
+branch_nodes <- dat %>%
+  dplyr::as_tibble() %>%
+  dplyr::filter(node_id %in% edg$child) %>%
+  dplyr::select(child_pop  = pop,
+                child_ind_id = ind_id,
+                child_node_id = node_id,
+                child_time = time, child_location = location) %>%
+  dplyr::inner_join(parent_nodes, by = c("child_node_id" = "child")) %>% # and smash the two dataframes together
+  dplyr::arrange(child_node_id)
+# get all the lines connecting the parent and child locations
+connections <- branch_nodes %>%
+  rowwise() %>%
+  mutate(pts=st_union(child_location,parent_location)) %>%
+  mutate(connection=st_cast(pts,"LINESTRING")) %>% ungroup()
+# let the branches hold the line information
+branches <- connections %>%
+  sf::st_set_geometry("connection")
+# let the connections hold the point position of the individuals
+connections <- connections %>% rowwise() %>%
+  mutate(edge_gens=child_time-parent_time,
+         # calculate the x and y displacements
+         disp=st_length(connection),
+         x_disp=unlist(child_location)[1]-unlist(parent_location)[1],
+         y_disp=unlist(child_location)[2]-unlist(parent_location)[2],
+         # and scale everything by generations
+         disp_pergen=disp/edge_gens,
+         x_disp_pergen=x_disp/edge_gens,
+         y_disp_pergen=y_disp/edge_gens) %>%
+  ungroup() %>%
+  sf::st_set_geometry("child_location")
+```
+
+Let's plot the tree...
+
+```{r}
+ggtree(tree) +
+  # internal nodes
+  geom_point(aes(color = as.factor(node))) +
+  geom_label2(aes(label = node, color = as.factor(node))) +
+  geom_tiplab(hjust = 0.1) +
+  # prettifying the plot
+  guides(color = "none") +
+  theme_tree() + # this adds an x-axis scale
+  hexpand(0.05)
+```
+
+
+```{r}
+connections %>% ggplot() +
+  geom_sf(aes(col=child_time)) +
+  scale_color_gradientn(colors=met.brewer("Hokusai1"))+
+  theme_minimal()
+ggsave(paste0("figs/",disp_f,"nodes.pdf"),device="pdf")
+```
+
+Now, I want to connect pairs of nodes, and look at the midpoint of their locations and the location of their MRCA. 
+
+```{r}
+data <- ts_data(ts) %>% as.data.frame()
+data %>% select(node_id,location,time)
+
+ts_MRCA <- data %>% 
+  rename("MRCA_location"="location",
+         "MRCA_time"="time",
+         "MRCA"="node_id") %>%
+  select(MRCA,MRCA_time,MRCA_location)
+
+# renaming node ids to agree between tree and data
+tree$tip.label <- c(1:length(tree$tip.label))
+
+ts_n1 <- data %>%
+  select(location,time,node_id) %>%
+  rename("n1_location"="location","n1_time"="time","n1"="node_id") %>%
+  mutate(n1=as.factor(n1))
+
+ts_n2 <- data %>%
+  select(location,time,node_id) %>%
+  rename("n2_location"="location","n2_time"="time","n2"="node_id") %>%
+  mutate(n2=as.factor(n2))
+
+# now for all pairs, add data
+pairs <- expand.grid(tree$tip.label,tree$tip.label) %>% # get all pairs of tips
+  filter(Var1!=Var2) %>%
+  mutate(Var1=as.factor(Var1),Var2=as.factor(Var2)) %>%
+  rename("n1"="Var1","n2"="Var2") %>% 
+  rowwise() %>%
+  mutate(MRCA=getMRCA(tree,c(n1,n2))) %>% # find their mrca
+  # add data for nodes and mrca
+  left_join(ts_MRCA,by="MRCA") %>%
+  left_join(ts_n1,by="n1") %>%
+  left_join(ts_n2,by="n2") %>%
+  #filter(MRCA_time>0) %>% 
+  # draw lines, find midpoints and errors
+  mutate(line=st_cast(st_union(n1_location,n2_location),"LINESTRING"),
+         midpoint=st_centroid(st_union(n1_location,n2_location)),
+         midtomrca=st_cast(st_union(midpoint,MRCA_location),"LINESTRING"),
+         error=st_length(midtomrca),
+         MRCA_x=unlist(MRCA_location)[1],
+         MRCA_y=unlist(MRCA_location)[2]) %>%
+  ungroup() %>%
+  # check geometry validity
+  filter(st_is_valid(line)==TRUE,st_is_valid(midtomrca)==TRUE,st_is_valid(midpoint)==TRUE)
+```
+
+
+```{r}
+pairs %>% ggplot(aes(col=MRCA_time)) +
+  geom_sf(aes(geometry=midpoint,shape="midpoint")) +
+  geom_sf(aes(geometry=midtomrca),alpha=0.1)+
+  geom_sf(aes(geometry=MRCA_location,shape="MRCA"))  +
+  #geom_sf_label(aes(label=MRCA,geometry=MRCA_location))+
+  scale_color_gradientn(colors=met.brewer("Hokusai1"))+
+  theme_minimal()
+ggsave(paste0("figs/",disp_f,"MRCAs.pdf"),device="pdf")
+```
+
+
+```{r}
+pairs %>% ggplot() +
+  geom_point(aes(x=MRCA_x-mean(MRCA_x),y=error,col=as.factor(MRCA)))
+ggsave(paste0("figs/",disp_f,"error_x.pdf"),device="pdf")
+```
+
+Does the age of the MRCA affect our estimate? Or is it maybe cancelled out by the number of descendant nodes?
+
+```{r}
+pairssumm <- pairs %>% group_by(MRCA) %>% summarise(mnerr=mean(error),n=n(),time=mean(MRCA_time)) 
+p1 <- pairssumm %>% ggplot(aes(x=time,y=mnerr,label=MRCA))+geom_point()+geom_label_repel()
+p2 <- pairssumm %>% ggplot(aes(x=n,y=mnerr,label=MRCA))+geom_point()+geom_label_repel()
+p3 <- pairssumm %>% ggplot(aes(x=time,y=n,label=MRCA))+geom_label_repel()+geom_point()
+ggarrange(p1,p2,p3)
+ggsave(paste0("figs/",disp_f,"error.pdf"),device="pdf")
+```
+
+
+
