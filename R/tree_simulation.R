@@ -1,11 +1,6 @@
-# Compute the times of all internal nodes
-# (I could imagine this being called `node_ranks`, with the couple of lines
-# of code at the end of the script actually going at the end of this function,
-# which would then return the ranks of those nodes, instead of the times simulated
-# by rtree)
+
 node_times <- function(tree) {
   root <- length(tree$tip.label) + 1
-
   # create an R environment object -- it's basically a list() with some special
   # properties but otherwise the same data structure as list()
   env <- new.env()
@@ -177,6 +172,10 @@ recursion_space <- function(tree, node, env , dim) {
 }
 
 move_nodes <- function(tree,disp_dist=1){
+  # this function will displace the nodes. It uses the edge lengths and draws from
+  # a normal distribution in x and y
+  # the tree, after its nodes are moved, will have a new attribute called "nodes"
+  # which will hold this spatial information
   tree_tbl <- tree$table %>%
     rowwise() %>%
     mutate(x=rnorm(n=1,mean=0,sd=edge_length*disp_dist),
@@ -248,6 +247,56 @@ treesim_connect <- function(ts){
   return(list(connections, branches))
 }
 
+find_ancestors <- function(tree, data){
+  # a function which estimates the location of internal nodes by getting the midpoint of tips
+  # this is done pairwise- so you get many estimates for a simgle node if it has more than
+  # two descendants.
+  ts_MRCA <- data %>%
+    rename("MRCA_location"="location",
+           "MRCA_time"="time",
+           "MRCA"="node_id") %>%
+    select(MRCA,MRCA_time,MRCA_location)
+
+  # renaming node ids to agree between tree and data
+  tree$tip.label <- c(1:length(tree$tip.label))
+
+  ts_n1 <- data %>%
+    select(location,time,node_id) %>%
+    rename("n1_location"="location","n1_time"="time","n1"="node_id") %>%
+    mutate(n1=as.factor(n1))
+
+  ts_n2 <- data %>%
+    select(location,time,node_id) %>%
+    rename("n2_location"="location","n2_time"="time","n2"="node_id") %>%
+    mutate(n2=as.factor(n2))
+
+  # now for all pairs, add data
+  pairs <- expand.grid(tree$tip.label,tree$tip.label) %>% # get all pairs of tips
+    filter(Var1!=Var2) %>%
+    mutate(Var1=as.factor(Var1),Var2=as.factor(Var2)) %>%
+    rename("n1"="Var1","n2"="Var2") %>%
+    rowwise() %>%
+    mutate(MRCA=getMRCA(tree,c(n1,n2))) %>% # find their mrca
+    # add data for nodes and mrca
+    left_join(ts_MRCA,by="MRCA") %>%
+    left_join(ts_n1,by="n1") %>%
+    left_join(ts_n2,by="n2") %>%
+    #filter(MRCA_time>0) %>%
+    # draw lines, find midpoints and errors
+    mutate(line=st_cast(st_union(n1_location,n2_location),"LINESTRING"),
+           midpoint=st_centroid(st_union(n1_location,n2_location)),
+           midtomrca=st_cast(st_union(midpoint,MRCA_location),"LINESTRING"),
+           error=st_length(midtomrca),
+           MRCA_x=unlist(MRCA_location)[1],
+           MRCA_y=unlist(MRCA_location)[2]) %>%
+    ungroup() %>%
+    group_by(MRCA) %>%
+    mutate(multiple=st_centroid(st_union(midpoint))) %>%
+    ungroup() %>%
+    # check geometry validity
+    filter(st_is_valid(line)==TRUE,st_is_valid(midtomrca)==TRUE,st_is_valid(midpoint)==TRUE,st_is_valid(multiple)==TRUE)%>%
+  return(pairs)
+}
 
 
 
