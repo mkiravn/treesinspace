@@ -72,7 +72,7 @@ recursion <- function(tree, node, env) {
 # this is a waiting time, or the time Tk that the tree spends with k nodes.
 # We will sum these cumulatively to get the actual time a node existed
 # And later use this to calculate branch lengths.
-edge_calculator <- function(tree,tree_mode,Ne=0.5){
+edge_calculator <- function(tree,tree_mode="coalescent",Ne=length(tree$tip.label)){
 
   # get the internal node times
   times <- node_times(tree)
@@ -99,6 +99,7 @@ edge_calculator <- function(tree,tree_mode,Ne=0.5){
   }
 
   node_times <- cumsum(waiting_times) # cumulatively sum to get node times
+  n <- length(tree$tip.label)
   ranks_c <- c(ranks,c(1:n)) # assign the missing ranks of tips (they all have the same time)
   node_times_ordered <- node_times[order(ranks_c)] # now in order of node index, rather than rank
 
@@ -171,15 +172,15 @@ recursion_space <- function(tree, node, env , dim) {
 
 }
 
-move_nodes <- function(tree,disp_dist=1){
+move_nodes <- function(tree,disp_dist=1,bias_x=0,bias_y=0){
   # this function will displace the nodes. It uses the edge lengths and draws from
   # a normal distribution in x and y
   # the tree, after its nodes are moved, will have a new attribute called "nodes"
   # which will hold this spatial information
   tree_tbl <- tree$table %>%
     rowwise() %>%
-    mutate(x=rnorm(n=1,mean=0,sd=edge_length*disp_dist),
-           y=rnorm(n=1,mean=0,sd=edge_length*disp_dist))
+    mutate(x=rnorm(n=1,mean=bias_x,sd=edge_length*disp_dist),
+           y=rnorm(n=1,mean=bias_y,sd=edge_length*disp_dist))
   tree$table <- tree_tbl
   n <- length(tree$tip.label)
   # get the internal node coordinates
@@ -247,7 +248,7 @@ treesim_connect <- function(ts){
   return(list(connections, branches))
 }
 
-find_ancestors <- function(tree, data){
+find_ancestors <- function(tree, data, stripped=TRUE){
   # a function which estimates the location of internal nodes by getting the midpoint of tips
   # this is done pairwise- so you get many estimates for a simgle node if it has more than
   # two descendants.
@@ -271,6 +272,7 @@ find_ancestors <- function(tree, data){
     mutate(n2=as.factor(n2))
 
   # now for all pairs, add data
+  if (stripped==FALSE){
   pairs <- expand.grid(tree$tip.label,tree$tip.label) %>% # get all pairs of tips
     filter(Var1!=Var2) %>%
     mutate(Var1=as.factor(Var1),Var2=as.factor(Var2)) %>%
@@ -294,9 +296,98 @@ find_ancestors <- function(tree, data){
     mutate(multiple=st_centroid(st_union(midpoint))) %>%
     ungroup() %>%
     # check geometry validity
-    filter(st_is_valid(line)==TRUE,st_is_valid(midtomrca)==TRUE,st_is_valid(midpoint)==TRUE,st_is_valid(multiple)==TRUE)%>%
+    filter(st_is_valid(line)==TRUE,st_is_valid(midtomrca)==TRUE,st_is_valid(midpoint)==TRUE,st_is_valid(multiple)==TRUE)
+  }
+  else {
+    pairs <- expand.grid(tree$tip.label,tree$tip.label) %>% # get all pairs of tips
+      filter(Var1!=Var2) %>%
+      mutate(Var1=as.factor(Var1),Var2=as.factor(Var2)) %>%
+      rename("n1"="Var1","n2"="Var2") %>%
+      rowwise() %>%
+      mutate(MRCA=getMRCA(tree,c(n1,n2))) %>% # find their mrca
+      # add data for nodes and mrca
+      left_join(ts_MRCA,by="MRCA") %>%
+      left_join(ts_n1,by="n1") %>%
+      left_join(ts_n2,by="n2") %>%
+      #filter(MRCA_time>0) %>%
+      # draw lines, find midpoints and errors
+      mutate(midpoint=st_centroid(st_union(n1_location,n2_location))) %>%
+      ungroup() %>%
+      group_by(MRCA) %>%
+      mutate(multiple=st_centroid(st_union(midpoint))) %>%
+      ungroup() #%>%
+      # check geometry validity
+      #filter(st_is_valid(midpoint)==TRUE,st_is_valid(multiple)==TRUE)
+  }
   return(pairs)
 }
+
+find_ancestor_rec <- function(tree){
+  # initialise some stuff
+  nodes <- tree$nodes %>% as.data.frame() # node information
+  dists <- dist.nodes(tree) # distance matrix
+  # initialise column
+  nodes$inf_loc <- NA
+  nodes$inf_loc[1:length(tree$tip.label)] <- nodes$location[1:length(tree$tip.label)]
+
+  while (sum(is.na(nodes$inf_loc))!=0){ # termination condition
+    unsolved <- is.na(nodes$inf_loc)==TRUE & nodes$node_id>length(tree$tip.label)+1
+    # pick which node to solve
+    if (sum(is.na(nodes$inf_loc))>1){
+      tosolve <- nodes[nodes$time==max(nodes[unsolved,"time"]),"node_id"]
+    }
+    else tosolve <- length(tree$tip.label)+1 # in case it is the root
+    children <- phangorn::Children(tree,tosolve) # find children
+    edges <- c(dists[children[1],tosolve],dists[children[2],tosolve]) # get edge lengths
+    weights <- c(edges[1]/sum(edges),edges[2]/sum(edges)) # weightings
+    locations <- c(nodes$inf_loc[children[1]],nodes$inf_loc[children[2]]) # get children locations
+    inf_locn <- weights[1]*unlist(locations[1])+weights[2]*unlist(locations[2]) # place the parent
+    nodes$inf_loc[tosolve] <- list(inf_locn) # add to dataframe
+  }
+  # ugly dataframe stuff
+  nodes <- nodes %>%
+    rowwise() %>%
+    mutate(inf_x=inf_loc[[1]],inf_y=inf_loc[[2]]) %>%
+    st_as_sf(coords=c("inf_x","inf_y")) %>%
+    select(-inf_loc) %>%
+    rename(inf_loc=geometry) %>%
+    st_set_geometry("location") %>% ungroup()
+  # return in nodes
+  tree$nodes <- nodes
+  return(tree)
+}
+
+pairwise_distance <- function(tree,data){
+  # gets the pairwise distance between nodes, and the time separating them
+  nodes <- data
+  # make two dataframes with node information
+  n1 <- nodes %>%
+    select(location,time,node_id) %>%
+    rename("n1_location"="location","n1_time"="time","n1"="node_id") %>%
+    mutate(n1=as.factor(n1))
+  n2 <- nodes %>%
+    select(location,time,node_id) %>%
+    rename("n2_location"="location","n2_time"="time","n2"="node_id") %>%
+    mutate(n2=as.factor(n2))
+  # matrix of distances
+  dists <- dist.nodes(tree)
+  rownames(dists)[c(1:length(tree$tip.label))] <- tree$tip.label # rename column and row names
+  # do some dataframe joining to get distances
+  pairs <- expand.grid(c(1:dim(nodes)[1]),c(1:dim(nodes)[1])) %>% # get all pairs of tips
+    filter(Var1!=Var2) %>%
+    mutate(Var1=as.factor(Var1),Var2=as.factor(Var2)) %>%
+    rename("n1"="Var1","n2"="Var2") %>%
+    rowwise() %>%
+    mutate(timedist=dists[n1][n2]) %>% # distance in time along tree
+    left_join(n1,by="n1") %>%
+    left_join(n2,by="n2") %>%
+    mutate(geodist=st_length(st_cast(st_union(n1_location,n2_location),"LINESTRING")), # distance in space
+           timediff=abs(n2_time-n1_time)) %>% # time disparity (not along tree)
+    ungroup()
+
+  return(pairs)
+}
+
 
 
 
