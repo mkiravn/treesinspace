@@ -1,4 +1,3 @@
-
 node_times <- function(tree) {
   root <- length(tree$tip.label) + 1
   # create an R environment object -- it's basically a list() with some special
@@ -315,12 +314,12 @@ find_ancestors <- function(tree, data, stripped=TRUE){
       ungroup() %>%
       group_by(MRCA) %>%
       mutate(multiple=st_centroid(st_union(midpoint))) %>%
-      ungroup() #%>%
-      # check geometry validity
-      #filter(st_is_valid(midpoint)==TRUE,st_is_valid(multiple)==TRUE)
+      ungroup()
   }
   return(pairs)
 }
+
+
 
 find_ancestor_rec <- function(tree){
   # initialise some stuff
@@ -357,7 +356,62 @@ find_ancestor_rec <- function(tree){
   return(tree)
 }
 
-pairwise_distance <- function(tree,data){
+
+
+find_ancestor_rec_ts <- function(tree,data){
+  # initialise some stuff
+  nodes <- data %>% select(node_id=phylo_id,location,time) %>%
+    as.data.frame() %>%
+    #mutate(node_id=node_id+1) %>%
+    arrange(node_id,decreasing=FALSE) # node information
+
+  dists <- dist.nodes(tree) # distance matrix
+
+  # initialise column
+  nodes$inf_loc <- NA
+  nodes$inf_loc[1:length(tree$tip.label)] <- nodes$location[1:length(tree$tip.label)]
+  nodes$var <- 0
+
+  while (sum(is.na(nodes$inf_loc))!=0){ # termination condition
+    unsolved <- is.na(nodes$inf_loc)==TRUE #& nodes$node_id>length(tree$tip.label)
+    # pick which node to solve
+    if (sum(is.na(nodes$inf_loc))>1){
+      tosolve <- nodes[nodes$time==max(nodes[unsolved,"time"]) ,"node_id"] # need to add a tiebreak if they are the same age
+      if (length(tosolve)>1) tosolve <- sample(tosolve,1)
+    } else tosolve <- length(tree$tip.label)+1 # in case it is the root
+    print(tosolve)
+    children <- phangorn::Children(tree,tosolve) # find children
+    edges <- c(dists[children[1],tosolve],dists[children[2],tosolve]) # get edge lengths
+    weights <- c(edges[1]/sum(edges),edges[2]/sum(edges)) # weightings
+    locations <- c(nodes$inf_loc[children[1]],nodes$inf_loc[children[2]]) # get children locations
+    inf_locn <- weights[1]*unlist(locations[1])+weights[2]*unlist(locations[2]) # place the parent
+    tms <- list("p"=nodes[nodes$node_id==tosolve,"time"], # relative times pretending that time goes in one direction
+                "c1"=nodes[nodes$node_id==children[2],"time"]-sum(edges), # walking backwards in time from one child
+                "c2"=nodes[nodes$node_id==children[2],"time"])
+    var <- (tms$c2-tms$p)*(tms$p-tms$c1)/(tms$c2-tms$c1) + # standard deviation of inferred location assuming brownian motion
+      nodes[nodes$node_id==children[1],"var"] + # sum uncertainty of children
+      nodes[nodes$node_id==children[2],"var"]
+    nodes$inf_loc[tosolve] <- list(inf_locn) # add to dataframe
+    nodes$var[tosolve] <- var # add to dataframe
+    print(paste(sum(is.na(nodes$inf_loc)),"nodes left."))
+
+  }
+  print("done inferring!")
+  # ugly dataframe stuff
+  nodes <- nodes %>%
+    rowwise() %>%
+    mutate(inf_x=inf_loc[[1]],inf_y=inf_loc[[2]]) %>%
+    st_as_sf(coords=c("inf_x","inf_y")) %>%
+    select(-inf_loc) %>%
+    rename(inf_loc=geometry) %>%
+    st_set_geometry("location") %>% ungroup()
+  # return in nodes
+  tree$nodes <- nodes
+  return(tree)
+}
+
+
+pairwise_distance <- function(tr,data){
   # gets the pairwise distance between nodes, and the time separating them
   nodes <- data
   # make two dataframes with node information
@@ -370,15 +424,14 @@ pairwise_distance <- function(tree,data){
     rename("n2_location"="location","n2_time"="time","n2"="node_id") %>%
     mutate(n2=as.factor(n2))
   # matrix of distances
-  dists <- dist.nodes(tree)
-  rownames(dists)[c(1:length(tree$tip.label))] <- tree$tip.label # rename column and row names
+  dists <- dist.nodes(tr)
   # do some dataframe joining to get distances
   pairs <- expand.grid(c(1:dim(nodes)[1]),c(1:dim(nodes)[1])) %>% # get all pairs of tips
     filter(Var1!=Var2) %>%
     mutate(Var1=as.factor(Var1),Var2=as.factor(Var2)) %>%
     rename("n1"="Var1","n2"="Var2") %>%
     rowwise() %>%
-    mutate(timedist=dists[n1][n2]) %>% # distance in time along tree
+    mutate(timedist=dists[n1,n2]) %>% # distance in time along tree
     left_join(n1,by="n1") %>%
     left_join(n2,by="n2") %>%
     mutate(geodist=st_length(st_cast(st_union(n1_location,n2_location),"LINESTRING")), # distance in space
@@ -387,6 +440,22 @@ pairwise_distance <- function(tree,data){
 
   return(pairs)
 }
+
+
+relcomp <- function(a, b) {
+
+  comp <- vector()
+
+  for (i in a) {
+    if (i %in% a && !(i %in% b)) {
+      comp <- append(comp, i)
+    }
+  }
+
+  return(comp)
+}
+
+
 
 
 
