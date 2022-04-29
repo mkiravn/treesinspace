@@ -247,7 +247,7 @@ treesim_connect <- function(ts){
   return(list(connections, branches))
 }
 
-find_ancestors <- function(tree, data, stripped=TRUE){
+find_ancestor_centroid <- function(tree, data, stripped=TRUE){
   # a function which estimates the location of internal nodes by getting the midpoint of tips
   # this is done pairwise- so you get many estimates for a simgle node if it has more than
   # two descendants.
@@ -321,7 +321,7 @@ find_ancestors <- function(tree, data, stripped=TRUE){
 
 
 
-find_ancestor_rec <- function(tree){
+find_ancestor_rec_ <- function(tree){
   # initialise some stuff
   nodes <- tree$nodes %>% as.data.frame() # node information
   dists <- dist.nodes(tree) # distance matrix
@@ -358,11 +358,11 @@ find_ancestor_rec <- function(tree){
 
 
 
-find_ancestor_rec_ts <- function(tree,data){
-  # initialise some stuff
+find_ancestor_recursive <- function(tree,data){
+  # initialise data
+  # it's important that the tree and data was put through ts_phylo first
   nodes <- data %>% select(node_id=phylo_id,location,time) %>%
     as.data.frame() %>%
-    #mutate(node_id=node_id+1) %>%
     arrange(node_id,decreasing=FALSE) # node information
 
   dists <- dist.nodes(tree) # distance matrix
@@ -393,10 +393,10 @@ find_ancestor_rec_ts <- function(tree,data){
       nodes[nodes$node_id==children[2],"var"]
     nodes$inf_loc[tosolve] <- list(inf_locn) # add to dataframe
     nodes$var[tosolve] <- var # add to dataframe
-    print(paste(sum(is.na(nodes$inf_loc)),"nodes left."))
+    #print(paste(sum(is.na(nodes$inf_loc)),"nodes left."))
 
   }
-  print("done inferring!")
+  #print("done inferring!")
   # ugly dataframe stuff
   nodes <- nodes %>%
     rowwise() %>%
