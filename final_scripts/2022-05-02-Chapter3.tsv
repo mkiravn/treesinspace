@@ -1,0 +1,9 @@
+sim	N	mat_dist	comp_dist	disp_fun	disp_dist	rep	ngen	sampling	migration
+1	1000	10	0.5	brownian	1	1	500	present	stationary
+2	1000	10	0.5	brownian	1	2	500	present	stationary
+3	1000	10	0.5	brownian	1	1	500	ancient	stationary
+4	1000	10	0.5	brownian	1	2	500	ancient	stationary
+5	1000	10	0.5	brownian	1	1	500	present	migrated
+6	1000	10	0.5	brownian	1	2	500	present	migrated
+7	1000	10	0.5	brownian	1	1	500	ancient	migrated
+8	1000	10	0.5	brownian	1	2	500	ancient	migrated

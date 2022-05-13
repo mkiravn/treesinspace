@@ -40,6 +40,9 @@ pars <- expand.grid(
   ngen = ngens
 ) %>%
   rownames_to_column("sim")
+print(paste("Running" , dim(pars)[1], "simulations."))
+write_delim(x = pars,file =paste0(as.character(Sys.Date()), "-Chapter2.tsv"),delim="\t" )
+
 
 
 ######### Here we run the simulations
@@ -82,7 +85,7 @@ for (row in c(1:dim(pars)[1])) {
     sim_length = ngens,
     resolution = 1,
     # resolution in "distance units per pixel"
-    path = "~/Desktop/test-model",
+    path = "~/Desktop/Chapter2",
     overwrite = TRUE
   )
 
@@ -280,7 +283,7 @@ all_connections %>% filter(simplified=="unsimplified") %>%
 
 # Checking that increments are stationary
 all_connections %>%
-  mutate(timegroup=cut((parent_time+child_time)/2,4)) %>%
+  mutate(timegroup=cut(child_time,4)) %>%
   filter(simplified=="unsimplified") %>%
   ggplot(aes(x=dist,col=timegroup)) +
   geom_density() +
@@ -293,13 +296,31 @@ all_connections %>%
   labs(y="density") -> stationary_increments
 # qqplot
 all_connections %>%
-  mutate(timegroup=cut((parent_time+child_time)/2,4)) %>%
+  mutate(timegroup=cut(child_time,4)) %>%
   filter(simplified=="unsimplified") %>%
   ggplot(aes(sample=dist,col=timegroup)) +
-  geom_qq(distribution = qrayleigh,dparams=list(scale=1),alpha=0.5) +
+  geom_qq(distribution = qrayleigh,dparams=list(scale=1),alpha=0.8,geom="path") +
   stat_qq_line(aes(sample=dist),distribution = qrayleigh,alpha=0.8,lty=2,col="black",dparams = list(scale=1))  +
   theme_minimal() +
   labs(y="simulated",x="theoretical") -> stationary_qqplot
+all_connections %>% filter(simplified=="unsimplified") %>%
+  mutate(timegroup=cut(child_time,4)) %>%
+  ggplot(aes(x=angle,fill=timegroup)) +
+  geom_histogram(alpha=0.2) +
+  geom_vline(xintercept = -pi/2,alpha=0.8,lty=2) +
+  geom_vline(xintercept = pi/2,alpha=0.8,lty=2) +
+  facet_wrap(~timegroup) +
+  theme_minimal() +
+  labs(x="angle",y="density",title="Angle distribution") +
+  labs(y="density")+
+  all_connections %>% filter(simplified=="unsimplified") %>%
+  mutate(timegroup=cut(child_time,4)) %>%
+  ggplot(aes(x=x_dist,y=y_dist,col=timegroup)) +
+  geom_point(alpha=0.5,size=0.5) +
+  facet_wrap(~timegroup) +
+  theme_minimal() +
+  labs(x="",y="",title="Individual dispersals")+
+  coord_fixed() -> stationary_dispersal_angle
 
 
 # Checking that increments are independent
@@ -310,8 +331,9 @@ while (length(unique(samp$node_id))<50){
   sampi <-
     ts_ancestors(tsu, i) %>% as.data.frame() %>%
     filter(!(parent_id %in% samp$parent_id))
-  if (dim(sampi)[1]>50){samp <- rbind(samp,sampi)}
+  if (dim(sampi)[1]>40){samp <- rbind(samp,sampi)}
 }
+
 
 all_connections %>%
   select(dist,parent_id=parent_node_id) %>%
@@ -335,22 +357,37 @@ all_connections %>%
   select(dist,parent_id=parent_node_id) %>%
   right_join(samp,by="parent_id")%>%
   ggplot(aes(sample = dist, col = as.factor(node_id)),alpha=0.1,size=1) +
-  geom_qq(distribution = qrayleigh,dparams=list(scale=1),alpha=0.5, show.legend = FALSE) +
+  geom_qq(distribution = qrayleigh,dparams=list(scale=1),alpha=0.5, show.legend = FALSE,geom="path") +
   stat_qq_line(aes(sample=dist),distribution = qrayleigh,alpha=0.8,lty=2,col="black",dparams = list(scale=1))  +
   theme_minimal()  +
   labs(col = "sampled tip",lty="simulated") +
   labs(y="simulated",x="theoretical") -> independent_qqplot
+all_connections %>% filter(simplified=="unsimplified") %>%
+  select(dist,parent_id=parent_node_id,angle) %>%
+  right_join(samp,by="parent_id") %>%
+  ggplot(aes(sample=angle,col=as.factor(node_id))) +
+  geom_qq(distribution = qunif,dparams=list(min=-pi/2,max=pi/2),alpha=0.5, show.legend = FALSE,geom="path") +
+  stat_qq_line(aes(sample=angle),distribution = qunif,dparams=list(min=-pi/2,max=pi/2),alpha=0.8,lty=2,col="black") +
+  theme_minimal() +
+  labs(x="theoretical",y="simulated",title="Angle distribution") +
+  all_connections %>% filter(simplified=="unsimplified") %>%
+  select(dist,parent_id=parent_node_id,x_dist,y_dist) %>%
+  right_join(samp,by="parent_id") %>%
+  ggplot(aes(x=x_dist,y=y_dist,col=as.factor(node_id))) +
+  geom_point(alpha=0.5,size=0.5,show.legend=FALSE) +
+  theme_minimal() +
+  labs(x="",y="",title="Individual dispersals")+
+  coord_fixed() -> independent_dispersal_angle
 
 
 # Scaling branch lengths
 all_connections %>%
   ggplot(aes(x=dist/sqrt(edge_gens),col=simplified)) +
   geom_density() +
-  stat_function(aes(col="Rayleigh"),
-                fun = drayleigh,
+  stat_function(fun = drayleigh,
                 args = list(scale=1),
                 alpha=0.8,
-                lty=2) +
+                lty=2,col="black") +
   theme_minimal() +
   labs(y="density") -> scaling
 all_connections %>%
@@ -380,19 +417,20 @@ brownian_qplots %>%   ggsave(
   width = 10
 )
 
-
-
-brownian_dispersal_angle %>%  ggsave(
+ggarrange(brownian_dispersal_angle,
+          stationary_dispersal_angle,independent_dispersal_angle,
+          ncol = 1, labels="auto") %>%  ggsave(
   filename = paste0("figs/", as.character(Sys.Date()), "-Brownian_plots_angle.pdf"),
   device = "pdf",
-  height = 2,
+  height = 8,
   width = 10
 )
 
-scaling  %>%   ggsave(
+ggarrange(scaling,scaling_qqplot)  %>%  ggsave(
   filename = paste0("figs/", as.character(Sys.Date()), "-Brownian_scaling.pdf"),
   device = "pdf",
   height = 2,
   width = 10
 )
 
+write_delim(pars,file=paste0("figs/", as.character(Sys.Date()), "-Ch2-pars.tsv"),delim="\t",quote = "none")
