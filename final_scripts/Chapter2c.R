@@ -26,14 +26,14 @@ set.seed(206)
 ######### Here we define parameters
 
 # defining parameters
-n <- 200
+n <- 2000
 Ns <- n
 mat_dists <- c(0.2, 0.5, 1, 2, 5) # mate distance
 comp_dists <- c(0.2) # competition distance
 disp_dists <- c(1) # mean dispersal distance
 disp_funs <- c("brownian", "cauchy")
 reps <- c(1:5)
-ngens <- 1000
+ngens <- 8000
 
 # generating a parameter table
 pars <- expand.grid(
@@ -81,7 +81,7 @@ for (row in c(1:dim(pars)[1])) {
     time = 1,
     N = pars[row, "N"],
     center = c(0, 0),
-    radius = 25,
+    radius = 100,
     map = map,
     mate_dist = pars[row, "mat_dist"],
     competition_dist = pars[row, "comp_dist"],
@@ -102,7 +102,7 @@ for (row in c(1:dim(pars)[1])) {
 
   # sampling strategy
   samples <-
-    sampling(model, times = ngens, list(pop, pars[row, "N"] / 4))
+    sampling(model, times = ngens, list(pop, 50))
 
   # simulate
   try_again(
@@ -250,6 +250,7 @@ all_dists  %>% filter(mat_dist == 0.2, disp_fun == "brownian") %>%
   theme_minimal() +
   facet_wrap( ~ simplified, nrow = 1) +
   lims(y=c(0,13)) +
+  labs(x="branch length (generations)",y="geographic distance") +
   scale_fill_gradientn(colours = met.brewer(name = "Hokusai2"))+
   scale_x_sqrt() -> pairwise_plot
 
@@ -273,13 +274,14 @@ all_dists  %>% filter(mat_dist == 0.2, disp_fun == "brownian") %>%
   geom_smooth(se = F, method = "loess") +
   theme_minimal() +
   facet_wrap( ~ simplified, nrow = 1) +
+  labs(y="branch length (generations)",x="geographic distance") +
   scale_fill_gradientn(colours = met.brewer(name = "Hokusai2")) -> pairwise_plot2
 
 pairwise_plot2 %>%  ggsave(
-  filename = paste0("figs/", as.character(Sys.Date()), "-pairs.pdf"),
+  filename = paste0("figs/", as.character(Sys.Date()), "pairs.pdf"),
   device = "pdf",
   height = 3,
-  width = 10
+  width = 7
 )
 
 #  Estimates from unsimplified trees, simplified trees and tips only
@@ -309,12 +311,6 @@ all_dists %>%  filter(mat_dist == 0.2,disp_fun=="brownian") %>%
              col = "black",
              lty = 3,
              alpha = 0.5) +
-  facet_grid(
-    rows = vars(mat_dist),
-    cols = vars(disp_fun, comp_dist),
-    labeller = label_both,
-    scales = "free_y"
-  ) +
   stat_function(
     fun = drayleigh,
     args = list(scale = 1),
@@ -323,7 +319,9 @@ all_dists %>%  filter(mat_dist == 0.2,disp_fun=="brownian") %>%
     col = "black"
   ) +
   theme_minimal() +
-  labs(y = "density") -> estimates.plot.cut
+  labs(y ="density",
+       x="estimated sigma",
+       lty="") -> estimates.plot.cut
 
 # histograms of edge generations
 all_dists %>%  filter(mat_dist == 0.2,
@@ -335,7 +333,9 @@ all_dists %>%  filter(mat_dist == 0.2,
   geom_vline(xintercept = 100,
              lty = 2,
              col = "black") +
-  theme_minimal() + labs(title = "uncut branches") -> h1
+  theme_minimal() +
+  labs(title = "uncut branches",
+       x="branch length (generations)") -> h1
 
 all_dists %>%  filter(mat_dist == 0.2,
                       disp_fun == "brownian",
@@ -347,7 +347,9 @@ all_dists %>%  filter(mat_dist == 0.2,
   geom_vline(xintercept = 100,
              lty = 2,
              col = "black") +
-  theme_minimal() + labs(title = "cut branches") -> h2
+  theme_minimal() +
+  labs(title = "cut branches",
+       x="branch length (generations)") -> h2
 ggarrange(h1,h2,common.legend = T,ncol=1) -> hist.plot
 
 
@@ -366,19 +368,15 @@ all_dists %>%  filter(mat_dist == 0.2,disp_fun=="brownian") %>%
     shape=as.factor(rep),
     x=simplified,col="cut"
   ),size=2) +
-  facet_grid(
-    rows = vars(mat_dist),
-    cols = vars(disp_fun, comp_dist),
-    labeller = label_both,
-    scales = "free_y"
-  ) +
   geom_line(data = estimates %>%  filter(mat_dist == 0.2,disp_fun=="brownian"), aes(
     y = sigma_d,
     x=simplified,group=rep,col="uncut"),lty=2)+
   geom_line(data = estimates_cut %>% filter(mat_dist == 0.2,disp_fun=="brownian",shortedge==T), aes(
     y = sigma_d,
     x=simplified,group=rep,col="cut"),lty=2)+
-  theme_minimal() + labs(shape="rep")+
+  theme_minimal() +
+  labs(shape="simulation replicate",
+       col="")+
   labs(y = "estimated sigma") -> estimates.plot.cut.2
 
 ggplot(data = filter(estimates),
@@ -387,29 +385,29 @@ ggplot(data = filter(estimates),
   geom_smooth(se = F, size = 0.5,method="lm") +
   theme_minimal() +
   facet_grid(
-    cols = vars(disp_fun, comp_dist),
-    labeller = label_both,
+    cols = vars(disp_fun),
     scales = "free_y"
   ) +
-  labs(y = "estimated sigma") -> estimates.plot.matdist
+  labs(y = "estimated sigma",
+       x="mating distance") -> estimates.plot.matdist
 
 estimates.plot.matdist  %>%   ggsave(
-  filename = paste0("figs/", as.character(Sys.Date()), "-estimate_plots_md.pdf"),
+  filename = paste0("figs/", as.character(Sys.Date()),"estimate_plots_md.pdf"),
   device = "pdf",
   height = 3,
-  width = 10
+  width = 7
 )
 
 ggarrange(
   pairwise_plot,
   hist.plot,
   estimates.plot.cut.2,
-  labels = "auto",
+  labels = "auto", heights=c(1,2,1),
   ncol = 1)  %>%   ggsave(
-  filename = paste0("figs/", as.character(Sys.Date()), "-estimate_plots_cut.pdf"),
+  filename = paste0("figs/", as.character(Sys.Date()),"estimate_plots_cut.pdf"),
   device = "pdf",
-  height = 12,
-  width = 10
+  height = 9,
+  width = 7
 )
 
 ### output table of results
@@ -444,7 +442,8 @@ all_dists %>%
   rename("mating distance" = mat_dist,
          "dispersal function" = disp_fun,
          "simplified (cut)"= simplified,
-         "tips only (cut)"= `tips only`
+         "tips only (cut)"= `tips only`,
+         "true sigma"=sigma
          ) %>%
   cbind(t1) %>%
   relocate(simplified, .after = unsimplified) %>%
@@ -456,7 +455,7 @@ all_dists %>%
   tab_spanner(label = "estimated sigma",
               columns = c(unsimplified,`simplified`,`tips only`)) %>%
   tab_spanner(label = "dispersal parameters",
-              columns = c(sigma, `mating distance`, `dispersal function`)) %>%
+              columns = c(`true sigma`, `mating distance`, `dispersal function`)) %>%
   tab_header(title = "Estimating sigma from trees",
               subtitle = "'Cut' means branches longer than 100 generations excluded") %>%
   data_color(

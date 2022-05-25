@@ -11,6 +11,9 @@ library(moments)
 library(phangorn)
 library(apTreeshape)
 library(VGAM)
+library(gt)
+library(gridExtra)
+library(patchwork)
 devtools::load_all("~/slendr")
 setup_env()
 check_env()
@@ -70,7 +73,7 @@ for (row in c(1:dim(pars)[1])) {
     time = 1,
     N = pars[row, "N"],
     center = c(0, 0),
-    radius = 25,
+    radius = 50, # (bigger than world)
     map = map,
     mate_dist = pars[row, "mat_dist"],
     competition_dist = pars[row, "comp_dist"],
@@ -221,69 +224,80 @@ all_connections <- all_connections %>% mutate(angle=atan(x_dist/y_dist))
 
 
 # ks statistics
-p <- all_connections %>% filter(simplified=="unsimplified") %>% select(dist) %>% ks.test("prayleigh", 1)
-xp <- all_connections %>% filter(simplified=="unsimplified") %>% select(x_dist) %>% ks.test("pnorm", 1,0)
-yp <- all_connections %>% filter(simplified=="unsimplified") %>% select(y_dist) %>% ks.test("pnorm", 1,0)
-
-
+# p <- all_connections %>% filter(simplified=="unsimplified") %>% select(dist) %>% ks.test("prayleigh", 1)
+# xp <- all_connections %>% filter(simplified=="unsimplified") %>% select(x_dist) %>% ks.test("pnorm", 1,0)
+# yp <- all_connections %>% filter(simplified=="unsimplified") %>% select(y_dist) %>% ks.test("pnorm", 1,0)
+#
+#
 # main plots
 all_connections %>% filter(simplified=="unsimplified") %>%
-  ggplot(aes(x=dist,col="simulated")) +
-  geom_density() +
-  stat_function(aes(col="Rayleigh"),fun = drayleigh, args = list(scale=1),alpha=0.8,lty=2) +
+  ggplot(aes(x=dist,lty="simulated",col="simulated")) +
+  geom_density(show.legend = F) +
+  stat_function(aes(lty="theoretical"),fun = drayleigh, args = list(scale=1),alpha=0.8,col="black") +
   theme_minimal() +
-  labs(y="density",caption = paste("P =",p$p.value))+
-all_connections %>% filter(simplified=="unsimplified") %>%
-  ggplot(aes(x=x_dist,col="simulated")) +
+  labs(y="density",x="distance",lty="") -> absdist
+all_connections %>%
+  filter(simplified == "unsimplified") %>%
+  select(x = x_dist, y =
+             y_dist) %>%
+  pivot_longer(cols = c("x", "y"),
+               names_to = "dimension",
+               values_to = "displacement") %>%
+  ggplot(aes(x = displacement, lty = "simulated", col = dimension)) +
   geom_density() +
-  stat_function(aes(col="Normal"),fun = dnorm, args = list(mean=0,sd=1),alpha=0.8,lty=2) +
+  stat_function(aes(lty = "theoretical"),
+    fun = dnorm,
+    args = list(mean = 0, sd = 1),
+    alpha = 1,
+    col = "black"
+  ) +
   theme_minimal() +
-  labs(y="density",caption = paste("P =",xp$p.value)) +
-all_connections %>% filter(simplified=="unsimplified") %>%
-  ggplot(aes(x=y_dist,col="simulated")) +
-  geom_density() +
-  stat_function(aes(col="Normal"),fun = dnorm, args = list(mean=0,sd=1),alpha=0.8,lty=2) +
-  theme_minimal() +
-  labs(y="density",caption = paste("P =",yp$p.value))-> brownian_dispersal
+  labs(y = "density", x = "displacement", lty = "") -> xandy
 
 # adding qqplots
 all_connections %>% filter(simplified=="unsimplified") %>%
   ggplot() +
-  stat_qq(aes(sample=dist,col="dist"),distribution = qrayleigh,alpha=0.5)  +
+  stat_qq(aes(sample=dist,col="distance"),distribution = qrayleigh,alpha=0.5)  +
   stat_qq_line(aes(sample=dist),distribution = qrayleigh,alpha=0.8,lty=2,col="black",dparams = list(scale=1))  +
   labs(y="simulated",x="theoretical") +
-  theme_minimal() +
+  theme_minimal() ->absdist_qq
 all_connections %>% filter(simplified=="unsimplified") %>%
   ggplot() +
-  stat_qq(aes(sample=x_dist,col="x_dist"),distribution = qnorm,alpha=0.5)  +
-  stat_qq(aes(sample=y_dist,col="y_dist"),distribution = qnorm,alpha=0.5)  +
+  stat_qq(aes(sample=x_dist,col="x displacement"),distribution = qnorm,alpha=0.5)  +
+  stat_qq(aes(sample=y_dist,col="y displacement"),distribution = qnorm,alpha=0.5)  +
   stat_qq_line(aes(sample=y_dist),distribution = qnorm,alpha=0.8,lty=2,col="black",dparams = list(mean=0,sd=1))  +
   labs(y="simulated",x="theoretical") +
-  theme_minimal() -> brownian_qqplots
-
+  theme_minimal() -> xandy_qq
+ggarrange(absdist,absdist_qq,xandy,xandy_qq,common.legend = T) -> brownian_plots
 
 # and checking that x and y are independent of each other
 
 pcor <- cor.test(all_connections$x_dist, all_connections$y_dist, method="pearson")
 
-all_connections %>% filter(simplified=="unsimplified") %>%
-  ggplot(aes(x=angle,col="simulated"),fill=NA) +
-  geom_histogram(alpha=0.2) +
-  geom_vline(xintercept = -pi/2,alpha=0.8,lty=2) +
-  geom_vline(xintercept = pi/2,alpha=0.8,lty=2) +
-  theme_minimal() +
-  labs(x="angle",y="density",title="Angle distribution") +
-  labs(y="density")+
+# all_connections %>% filter(simplified=="unsimplified") %>%
+#   ggplot(aes(x=angle,col="simulated"),fill=NA) +
+#   geom_histogram(alpha=0.2) +
+#   geom_vline(xintercept = -pi/2,alpha=0.8,lty=2) +
+#   geom_vline(xintercept = pi/2,alpha=0.8,lty=2) +
+#   theme_minimal() +
+#   labs(x="angle",y="density",title="Angle distribution") +
+#   labs(y="density")+
 all_connections %>% filter(simplified=="unsimplified") %>%
   ggplot(aes(x=x_dist,y=y_dist,col="simulated")) +
-  geom_point(alpha=0.5,size=0.5) +
+  geom_point(alpha=1,size=0.3,show.legend = F) +
   theme_minimal() +
-  labs(x="",y="",title="Individual dispersals",caption=paste("P =",round(pcor$p.value,3)))+
+  labs(x="x displacement",y="y displacement")+
+  geom_density_2d(alpha=1,show.legend = F,col="grey") +
+  stat_cor(col="black",geom="label") +
   coord_fixed()-> brownian_dispersal_angle
+ggarrange(brownian_plots,
+          brownian_dispersal_angle,
+          ncol = 2,
+          widths = c(2,1)) -> brownian_plots_panel
 
 # Checking that increments are stationary
 all_connections %>%
-  mutate(timegroup=cut(child_time,4)) %>%
+  mutate(timegroup=cut_width(parent_time,width=25,boundary=0)) %>%
   filter(simplified=="unsimplified") %>%
   ggplot(aes(x=dist,col=timegroup)) +
   geom_density() +
@@ -291,146 +305,228 @@ all_connections %>%
                 fun = drayleigh,
                 args = list(scale=1),
                 alpha=0.8,
-                lty=2) +
+                lty=2, col="black") +
   theme_minimal() +
-  labs(y="density") -> stationary_increments
+  labs(y="density",
+       col="time grouping",
+       x="distance") -> stationary_increments
 # qqplot
 all_connections %>%
-  mutate(timegroup=cut(child_time,4)) %>%
+  mutate(timegroup=cut_width(parent_time,width=25,boundary=0)) %>%
   filter(simplified=="unsimplified") %>%
   ggplot(aes(sample=dist,col=timegroup)) +
   geom_qq(distribution = qrayleigh,dparams=list(scale=1),alpha=0.8,geom="path") +
   stat_qq_line(aes(sample=dist),distribution = qrayleigh,alpha=0.8,lty=2,col="black",dparams = list(scale=1))  +
   theme_minimal() +
-  labs(y="simulated",x="theoretical") -> stationary_qqplot
+  labs(y="simulated",
+       x="theoretical",
+       col="time grouping") -> stationary_qqplot
+# all_connections %>% filter(simplified == "unsimplified") %>%
+#   mutate(timegroup = cut(child_time, 4)) %>%
+#   ggplot(aes(x = angle, col = timegroup)) +
+#   geom_histogram(alpha = 0.2) +
+#   geom_vline(xintercept = -pi / 2,
+#              alpha = 0.8,
+#              lty = 2) +
+#   geom_vline(xintercept = pi / 2,
+#              alpha = 0.8,
+#              lty = 2) +
+#   facet_wrap( ~ timegroup) +
+#   theme_minimal() +
+#   labs(x = "angle",
+#        y = "density",
+#        title = "Angle distribution",
+#        col = "time grouping") +
+#   labs(y = "density")
 all_connections %>% filter(simplified=="unsimplified") %>%
-  mutate(timegroup=cut(child_time,4)) %>%
-  ggplot(aes(x=angle,fill=timegroup)) +
-  geom_histogram(alpha=0.2) +
-  geom_vline(xintercept = -pi/2,alpha=0.8,lty=2) +
-  geom_vline(xintercept = pi/2,alpha=0.8,lty=2) +
-  facet_wrap(~timegroup) +
-  theme_minimal() +
-  labs(x="angle",y="density",title="Angle distribution") +
-  labs(y="density")+
-  all_connections %>% filter(simplified=="unsimplified") %>%
-  mutate(timegroup=cut(child_time,4)) %>%
+  mutate(timegroup=cut_width(parent_time,width=25,boundary=0)) %>%
   ggplot(aes(x=x_dist,y=y_dist,col=timegroup)) +
-  geom_point(alpha=0.5,size=0.5) +
-  facet_wrap(~timegroup) +
+  geom_point(alpha=0.5,size=0.1,show.legend = F) +
   theme_minimal() +
-  labs(x="",y="",title="Individual dispersals")+
-  coord_fixed() -> stationary_dispersal_angle
+  geom_density_2d(show.legend = F) +
+  #stat_cor(geom="label",aes(group=timegroup),fill="white",r.accuracy = 0.01,p.accuracy = 0.01,size=4)+
+  labs(x="x displacement",y="y displacement",col="time grouping")+
+  coord_equal()-> stationary_dispersal_angle
+all_connections %>% filter(simplified=="unsimplified") %>%
+  mutate(timegroup=cut_width(parent_time,width=25,boundary=0)) %>%
+  group_by(`time grouping` = timegroup) %>%
+  summarise(n=n(),
+            `R`= round(cor.test(x_dist,y_dist,method="pearson")$statistic,3),
+            `P-value`=round(cor.test(x_dist,y_dist,method="pearson")$p.value,3)) %>%
+  ggtexttable(rows=NULL,theme=ttheme("minimal",base_size=8) )-> stationary_table
+ggarrange(stationary_table,stationary_dispersal_angle,ncol = 1) -> stationary_rhs
+ggarrange(
+  stationary_increments,
+  stationary_qqplot,
+  stationary_table,
+  common.legend = T,
+  nrow = 1
+) -> stationary
 
 
 # Checking that increments are independent
-samp <- c()
-while (length(unique(samp$node_id))<50){
-  print(paste(50-length(unique(samp$node_id)),"left to sample."))
-  i <- sample(c(1:Ns),1)
-  sampi <-
-    ts_ancestors(tsu, i) %>% as.data.frame() %>%
-    filter(!(parent_id %in% samp$parent_id))
-  if (dim(sampi)[1]>40){samp <- rbind(samp,sampi)}
+# samp <- c()
+# while (length(unique(samp$node_id)) < 50) {
+#   print(paste(50 - length(unique(samp$node_id)), "left to sample."))
+#   i <- sample(c(1:Ns), 1)
+#   sampi <-
+#     ts_ancestors(tsu, i) %>% as.data.frame() %>%
+#     filter(!(parent_id %in% samp$parent_id))
+#   if (dim(sampi)[1] > 40) {
+#     samp <- rbind(samp, sampi)
+#   }
+# }
+#
+# all_connections %>%
+#   select(dist, parent_id = parent_node_id) %>%
+#   right_join(samp, by = "parent_id") %>%
+#   ggplot(aes(x = dist, col = as.factor(node_id)), size = 0.1) +
+#   geom_line(
+#     aes(color = as.factor(node_id)),
+#     stat = "density",
+#     size = 0.5,
+#     alpha = 0.3,
+#     show.legend = FALSE
+#   ) +
+#   stat_function(
+#     aes(col = "Rayleigh"),
+#     fun = drayleigh,
+#     args = list(scale = 1),
+#     alpha = 1,
+#     lty = 2,
+#     col = "black",
+#     show.legend = FALSE
+#   ) +
+#   theme_minimal()  +
+#   labs(col = "sample", lty = "simulated") +
+#   labs(y = "density",
+#        x = "distance") -> independent_increments
+
+cp_jumps <- data.frame()
+
+while (dim(cp_jumps)[1]<500){
+  row <- sample(x=c(1:dim(filter(all_connections,simplified=="unsimplified"))[1]),size=1)
+  focal <- filter(all_connections,simplified=="unsimplified")[row,"parent_node_id"]
+  if (focal %in% cp_jumps$focal_node){
+    print("seen already")
+  } else{
+    downstream_connection <- filter(all_connections,parent_node_id==focal,simplified=="unsimplified")[1,]
+    upstream_connection <- filter(all_connections,child_node_id==focal,simplified=="unsimplified")
+    toadd <- data.frame(focal_node=focal,
+                        downstream_distance=downstream_connection$dist,
+                        downstream_angle=downstream_connection$angle,
+                        upstream_distance=upstream_connection$dist,
+                        upstream_angle=upstream_connection$angle)
+    cp_jumps <- rbind(cp_jumps,toadd) %>% filter(is.na(downstream_distance)==F)
+  }
 }
 
+cp_jumps %>%
+  ggplot(aes(y=downstream_distance,x=upstream_distance)) +
+  geom_point(show.legend=F, aes(col=as.factor(focal_node)),size=0.5,alpha=0.5) +
+  labs(x="upstream",y="downstream",title="Distance") +
+  theme_minimal() +
+  stat_cor(geom="label") +
 
-all_connections %>%
-  select(dist,parent_id=parent_node_id) %>%
-  right_join(samp,by="parent_id")%>%
-  ggplot(aes(x = dist, col = as.factor(node_id)),size=0.1) +
-  geom_line(aes(color=as.factor(node_id)), stat="density", size=0.5, alpha=0.3, show.legend = FALSE) +
-  stat_function(
-    aes(col = "Rayleigh"),
-    fun = drayleigh,
-    args = list(scale = 1),
-    alpha = 1,
-    lty = 2,
-    col="black",
-    show.legend = FALSE
-  ) +
-  theme_minimal()  +
-  labs(col = "sample",lty="simulated") +
-  labs(y="density") -> independent_increments
+  cp_jumps %>%
+  ggplot(aes(y=downstream_angle,x=upstream_angle)) +
+  geom_point(show.legend=F, aes(col=as.factor(focal_node)),size=0.5,alpha=0.5) +
+  labs(x="upstream",y="downstream",title="Angle") +
+  theme_minimal() +
+  stat_cor(geom="label") -> independence_plot
+
+ggarrange(brownian_plots_panel,stationary,independence_plot,labels="auto",ncol=1,heights=c(2,1,1)) -> panel_plot
+
 # qqplot
-all_connections %>%
-  select(dist,parent_id=parent_node_id) %>%
-  right_join(samp,by="parent_id")%>%
-  ggplot(aes(sample = dist, col = as.factor(node_id)),alpha=0.1,size=1) +
-  geom_qq(distribution = qrayleigh,dparams=list(scale=1),alpha=0.5, show.legend = FALSE,geom="path") +
-  stat_qq_line(aes(sample=dist),distribution = qrayleigh,alpha=0.8,lty=2,col="black",dparams = list(scale=1))  +
-  theme_minimal()  +
-  labs(col = "sampled tip",lty="simulated") +
-  labs(y="simulated",x="theoretical") -> independent_qqplot
-all_connections %>% filter(simplified=="unsimplified") %>%
-  select(dist,parent_id=parent_node_id,angle) %>%
-  right_join(samp,by="parent_id") %>%
-  ggplot(aes(sample=angle,col=as.factor(node_id))) +
-  geom_qq(distribution = qunif,dparams=list(min=-pi/2,max=pi/2),alpha=0.5, show.legend = FALSE,geom="path") +
-  stat_qq_line(aes(sample=angle),distribution = qunif,dparams=list(min=-pi/2,max=pi/2),alpha=0.8,lty=2,col="black") +
-  theme_minimal() +
-  labs(x="theoretical",y="simulated",title="Angle distribution") +
-  all_connections %>% filter(simplified=="unsimplified") %>%
-  select(dist,parent_id=parent_node_id,x_dist,y_dist) %>%
-  right_join(samp,by="parent_id") %>%
-  ggplot(aes(x=x_dist,y=y_dist,col=as.factor(node_id))) +
-  geom_point(alpha=0.5,size=0.5,show.legend=FALSE) +
-  theme_minimal() +
-  labs(x="",y="",title="Individual dispersals")+
-  coord_fixed() -> independent_dispersal_angle
+# all_connections %>%
+#   select(dist, parent_id = parent_node_id) %>%
+#   right_join(samp, by = "parent_id") %>%
+#   ggplot(aes(sample = dist, col = as.factor(node_id)),
+#          alpha = 0.1,
+#          size = 1) +
+#   geom_qq(
+#     distribution = qrayleigh,
+#     dparams = list(scale = 1),
+#     alpha = 0.5,
+#     show.legend = FALSE,
+#     geom = "path"
+#   ) +
+#   stat_qq_line(
+#     aes(sample = dist),
+#     distribution = qrayleigh,
+#     alpha = 0.8,
+#     lty = 2,
+#     col = "black",
+#     dparams = list(scale = 1)
+#   )  +
+#   theme_minimal()  +
+#   labs(col = "sampled tip", lty = "simulated") +
+#   labs(y = "simulated", x = "theoretical") -> independent_qqplot
+# all_connections %>% filter(simplified == "unsimplified") %>%
+#   select(dist, parent_id = parent_node_id, angle) %>%
+#   right_join(samp, by = "parent_id") %>%
+#   ggplot(aes(sample = angle, col = as.factor(node_id))) +
+#   geom_qq(
+#     distribution = qunif,
+#     dparams = list(min = -pi / 2, max = pi / 2),
+#     alpha = 0.5,
+#     show.legend = FALSE,
+#     geom = "path"
+#   ) +
+#   stat_qq_line(
+#     aes(sample = angle),
+#     distribution = qunif,
+#     dparams = list(min = -pi / 2, max = pi / 2),
+#     alpha = 0.8,
+#     lty = 2,
+#     col = "black"
+#   ) +
+#   theme_minimal() +
+#   labs(x = "theoretical", y = "simulated", title = "Angle distribution") +
+#   all_connections %>% filter(simplified == "unsimplified") %>%
+#   select(dist, parent_id = parent_node_id, x_dist, y_dist) %>%
+#   right_join(samp, by = "parent_id") %>%
+#   ggplot(aes(
+#     x = x_dist,
+#     y = y_dist,
+#     col = as.factor(node_id)
+#   )) +
+#   geom_point(alpha = 0.5,
+#              size = 0.5,
+#              show.legend = FALSE) +
+#   theme_minimal() +
+#   labs(x = "", y = "", title = "Individual dispersals") +
+#   coord_fixed() -> independent_dispersal_angle
 
 
 # Scaling branch lengths
-all_connections %>%
-  ggplot(aes(x=dist/sqrt(edge_gens),col=simplified)) +
-  geom_density() +
-  stat_function(fun = drayleigh,
-                args = list(scale=1),
-                alpha=0.8,
-                lty=2,col="black") +
-  theme_minimal() +
-  labs(y="density") -> scaling
-all_connections %>%
-  ggplot(aes(sample=dist/sqrt(edge_gens),col=simplified)) +
-  geom_qq(distribution = qrayleigh,dparams=list(scale=1),alpha=0.5) +
-  stat_qq_line(aes(sample=dist),distribution = qrayleigh,alpha=0.8,lty=2,col="black",dparams = list(scale=1))  +
-  theme_minimal() +
-  labs(y="simulated",x="theoretical") -> scaling_qqplot
+# all_connections %>%
+#   ggplot(aes(x=dist/sqrt(edge_gens),col=simplified)) +
+#   geom_density() +
+#   stat_function(fun = drayleigh,
+#                 args = list(scale=1),
+#                 alpha=0.8,
+#                 lty=2,col="black") +
+#   theme_minimal() +
+#   labs(y="density",
+#        x="scaled distance") -> scaling
+# all_connections %>%
+#   ggplot(aes(sample=dist/sqrt(edge_gens),col=simplified)) +
+#   geom_qq(distribution = qrayleigh,dparams=list(scale=1),alpha=0.5) +
+#   stat_qq_line(aes(sample=dist),distribution = qrayleigh,alpha=0.8,lty=2,col="black",dparams = list(scale=1))  +
+#   theme_minimal() +
+#   labs(y="simulated",x="theoretical") -> scaling_qqplot
 
-
-ggarrange(brownian_dispersal,
-          stationary_increments+independent_increments,
-          ncol = 1, labels="auto") -> brownian_plots
-brownian_plots %>%   ggsave(
-  filename = paste0("figs/", as.character(Sys.Date()), "-Brownian_plots.pdf"),
-  device = "pdf",
-  height = 5,
-  width = 10
-)
-ggarrange(brownian_qqplots,
-          stationary_qqplot+independent_qqplot,
-          ncol = 1, labels="auto") -> brownian_qplots
-brownian_qplots %>%   ggsave(
-  filename = paste0("figs/", as.character(Sys.Date()), "-Brownian_qqplots.pdf"),
-  device = "pdf",
-  height = 5,
-  width = 10
-)
-
-ggarrange(brownian_dispersal_angle,
-          stationary_dispersal_angle,independent_dispersal_angle,
-          ncol = 1, labels="auto") %>%  ggsave(
-  filename = paste0("figs/", as.character(Sys.Date()), "-Brownian_plots_angle.pdf"),
+panel_plot %>%   ggsave(
+  filename = paste0("figs/", as.character(Sys.Date()), "Brownian_plots.pdf"),
   device = "pdf",
   height = 8,
-  width = 10
+  width = 7
 )
 
-ggarrange(scaling,scaling_qqplot)  %>%  ggsave(
-  filename = paste0("figs/", as.character(Sys.Date()), "-Brownian_scaling.pdf"),
-  device = "pdf",
-  height = 2,
-  width = 10
-)
 
 write_delim(pars,file=paste0("figs/", as.character(Sys.Date()), "-Ch2-pars.tsv"),delim="\t",quote = "none")
+
+
+
+

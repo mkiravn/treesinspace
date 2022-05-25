@@ -11,6 +11,9 @@ library(moments)
 library(phangorn)
 library(apTreeshape)
 library(VGAM)
+library(scales)
+library(beeswarm)
+library(ggbeeswarm)
 devtools::load_all("~/slendr")
 setup_env()
 check_env()
@@ -20,7 +23,7 @@ set.seed(206)
 
 # defining parameters
 Ns <- 100 # number of individuals in population
-mat_dists <- c(2, 5, 10, 1000) # mating distance
+mat_dists <- c(1, 5, 10, 100) # mating distance
 comp_dists <- c(0, 0.2, 20, 40) # competition distance
 disp_dists <- c(1:3) # dispersal distance (sigma)
 disp_funs <-
@@ -35,7 +38,7 @@ pars <- expand.grid(
   mat_dist = mat_dists,
   comp_dist = comp_dists,
   disp_fun = disp_funs,
-  disp_dist = disp_dists,
+  sigma = disp_dists,
   rep = reps,
   ngen = ngens
 ) %>%
@@ -75,7 +78,7 @@ for (row in c(1:dim(pars)[1])) {
     mate_dist = pars[row, "mat_dist"],
     competition_dist = pars[row, "comp_dist"],
     dispersal_fun = as.character(pars[row, "disp_fun"]),
-    dispersal_dist = pars[row, "disp_dist"]
+    dispersal_dist = pars[row, "sigma"]
   )
 
   # compile and run the model
@@ -90,7 +93,7 @@ for (row in c(1:dim(pars)[1])) {
   )
 
   # sampling strategy
-  samples <- sampling(model, times = ngens, list(pop, 25))
+  samples <- sampling(model, times = ngens, list(pop, pars[row, "N"]/2))
 
   # simulate
   # simulate
@@ -151,8 +154,8 @@ for (row in c(1:dim(pars)[1])) {
         pars[row, "mat_dist"],
       comp_dist =
         pars[row, "comp_dist"],
-      disp_dist =
-        pars[row, "disp_dist"],
+      sigma =
+        pars[row, "sigma"],
       sim = as.factor(row),
       x = unlist(location)[1],
       y = unlist(location)[2],
@@ -175,8 +178,8 @@ for (row in c(1:dim(pars)[1])) {
         pars[row, "mat_dist"],
       comp_dist =
         pars[row, "comp_dist"],
-      disp_dist =
-        pars[row, "disp_dist"],
+      sigma =
+        pars[row, "sigma"],
       sim = as.factor(row),
       x = unlist(location)[1],
       y = unlist(location)[2],
@@ -201,7 +204,7 @@ tree_data <- tree_data %>%
 conns_simp <- lapply(trees, ts_connect)
 conns <- lapply(trees_us, ts_connect)
 
-all_connections <- data.frame() # this will hold the connections
+all_connections_l <- data.frame() # this will hold the connections
 
 for (row in c(1:dim(pars)[1])) {
   print(paste("Connecting tree number:", row))
@@ -213,142 +216,326 @@ for (row in c(1:dim(pars)[1])) {
     as.data.frame() %>%
     mutate(simplified = "simplified") %>%
     cbind(pars[row, ]) %>% rbind(all_connections_i)
-  all_connections <- rbind(all_connections, all_connections_i)
+  all_connections_l <- rbind(all_connections_l, all_connections_i)
 }
 
 
 ######### Plotting
+global_labeller <- labeller(.default=label_value,
+                            `mating distance`=label_both,
+                            `competition distance`=label_both,
+                            sigma=label_both)
+
+all_connections_l <- all_connections_l  %>%
+  rename(
+  "competition distance" = "comp_dist",
+  "mating distance" = "mat_dist",
+  "distance" = "dist",
+  "sigma" = "sigma",
+  "dispersal function" = "disp_fun",
+  "x displacement" = "x_dist",
+  "y displacement" = "y_dist"
+)
+
 
 ## Plotting curves of parent-offspring distance
 # 1. Mating distance and competition
-all_connections %>%
-  filter(
-    #disp_fun == "brownian",
-    simplified == "unsimplified",
-    disp_dist==1
-  ) %>%
-  ggplot(aes(x = dist, col = as.factor(comp_dist))) +
-  geom_density(alpha = 0.5) +
-  lims(x = c(0, 30)) +
+all_connections_l %>%
+  filter(simplified == "unsimplified",
+         sigma == 1) %>%
+  ggplot(aes(x = distance,
+             col = as.factor(`competition distance`),
+             )) +
+  geom_density(alpha = 0.1,size=1) +
+  lims(x = c(0, 15)) +
   theme_minimal() +
-  geom_vline(aes(xintercept = mat_dist),lty=2,size=0.5,alpha=0.8) +
-  facet_grid(cols=vars(mat_dist),rows=vars(disp_fun),labeller=label_both)+
-  scale_colour_viridis_d(direction = -1) +
-  labs(col = "competition distance",title="Mating and competition distance") -> curves_plot1
-# 2. Dispersal function
-all_connections %>%
-  filter(comp_dist == 0,
-         mat_dist == min(mat_dists),
-         disp_dist == 1,
-         simplified == "unsimplified") %>%
-  ggplot(aes(x = dist, col = disp_fun)) +
-  geom_density(alpha = 0.5) +
-  lims(x = c(0, 20)) +
-  theme_minimal() +
-  stat_function(fun = drayleigh, args = list(scale=1),alpha=0.8,lty=2,col="black") +
-  facet_grid(cols=vars(mat_dist,comp_dist,disp_dist),labeller=label_both) +
-  labs(col = "dispersal function",y="density",title="Dispersal function") -> curves_plot2
+  geom_vline(
+    aes(xintercept = `mating distance`),
+    lty = 2,
+    size = 0.5,
+    alpha = 0.8
+  ) +
+  facet_grid(
+    cols = vars(`mating distance`),
+    rows = vars(`dispersal function`),
+    labeller = global_labeller,
+    scales = "free_y"
+  ) +theme(strip.text.x = element_text(size = 6)) +
+  scale_color_manual(values = met.brewer("Hiroshige", length(comp_dists)))  +
+  scale_fill_manual(values = met.brewer("Hiroshige", length(comp_dists)),guide="none")  +
+  labs(col = "competition distance",
+       title = "Mating and competition distance",
+       x = "distance",
+       y = "density") -> curves_plot1
 
-ggarrange(curves_plot1,curves_plot2,ncol=1,heights=c(2,1),labels="auto") -> curves_plots
+
+
+# 2. Dispersal function
+all_connections_l %>%
+  filter(`competition distance` == 0,
+         `mating distance` == min(mat_dists),
+         sigma == 1,
+         simplified == "unsimplified") %>%
+  ggplot(aes(x = distance, col = `dispersal function`),size=1) +
+  geom_density(alpha = 0.5) +
+  lims(x = c(0, 15)) +
+  theme_minimal() +
+  stat_function(
+    fun = drayleigh,
+    args = list(scale = 1),
+    alpha = 0.8,
+    lty = 2,
+    col = "black"
+  ) +
+  theme(strip.text.x = element_text(size = 6)) +
+  labs(col = "dispersal function",
+       y = "density",
+       x="distance",
+       title = "Dispersal function",
+       subtitle="Simulated") -> curves_plot2
+
+
+# theoretical plots
+ggplot() +
+  theme_minimal() +
+  stat_function(
+    fun = dfoldnorm,
+    args = list(mean = 0, sd = 1),
+    alpha = 1,
+    lty = 1,
+    aes(col = "normal")
+  ) + stat_function(
+    fun = drayleigh,
+    args = list(scale = 1),
+    alpha = 1,
+    lty = 1,
+    aes(col = "brownian")
+  ) +  stat_function(
+    fun = dcauchy,
+    args = list(scale = 1),
+    alpha = 1,
+    lty = 1,
+    aes(col = "cauchy")
+  ) +   stat_function(
+    fun = dunif,
+    args = list(min = 0, max = 1),
+    alpha = 1,
+    lty = 1,
+    aes(col = "uniform")
+  ) + stat_function(
+    fun = dexp,
+    args = list(rate = 1),
+    alpha = 1,
+    lty = 1,
+    aes(col = "exponential")
+  ) +
+  stat_function(
+    fun = drayleigh,
+    args = list(scale = 1),
+    alpha = 1,
+    lty = 2,
+    col = "black"
+  )  +
+  lims(x = c(0, 15)) +
+  labs(col = "distribution",
+       y = "density",
+       x="distance",
+       title = "Dispersal function",
+       subtitle="Theoretical")+
+  scale_color_manual(
+    values = c(
+      "brownian" = hue_pal()(5)[1],
+      "normal" = hue_pal()(5)[2],
+      "cauchy" = hue_pal()(5)[3],
+      "exponential" = hue_pal()(5)[4],
+      "uniform" = hue_pal()(5)[5]
+    )
+  ) -> theory_plot
+
+ggarrange(
+  curves_plot2,
+  theory_plot,
+  ncol = 1,
+  common.legend = T
+)  -> dispfun_plot
+
+ggarrange(
+  curves_plot1,
+  dispfun_plot,
+  ncol = 1,
+  heights = c(2, 1.5),
+  labels = "auto"
+) -> curves_plots
 
 ## Plotting statistics of these distributions
 # Calculate variance and kurtosis
-all_connections_stats <- all_connections %>% filter(simplified=="simplified") %>%
-  group_by(mat_dist, comp_dist, disp_dist, disp_fun, simplified, rep, sim) %>%
+all_connections_stats <- all_connections_l %>% filter(simplified=="simplified") %>%
+  group_by(`mating distance`, `competition distance`, sigma, `dispersal function`, simplified, rep, sim) %>%
   summarise(
-    mean = mean(dist),
-    variance = var(dist),
-    kurtosis = kurtosis(dist)
+    `mean distance` = mean(`distance`),
+    `variance (x displacement)` = var(`x displacement`),
+    `kurtosis (x displacement)` = kurtosis(`x displacement`)
   ) %>%
   pivot_longer(
-    cols = c("mean", "variance", "kurtosis"),
+    cols = c("mean distance", "variance (x displacement)", "kurtosis (x displacement)"),
     names_to = "statistic",
     values_to = "value"
   )
+# order factor
+all_connections_stats$statistic <-
+  factor(
+    all_connections_stats$statistic,
+    levels = c(
+      "mean distance",
+      "variance (x displacement)",
+      "kurtosis (x displacement)"
+    )
+  )
 
 # Effect of mating and competition distance
-all_connections_stats %>% filter(disp_dist==1) %>%
-    ggplot(aes(x = mat_dist, y = value, col=disp_fun)) +
-    geom_smooth(method = "lm",alpha=0.5,size=0.5,se = F) +
-    geom_point() + scale_x_log10() +
-    facet_grid( rows=vars(statistic),cols=vars(comp_dist,disp_dist), labeller = label_both,scales="free_y") +
-    theme_minimal() +
-  labs(title = "Mating and competition distance") -> mating_competition
-# Effect of dispersal distance
-all_connections_stats %>% filter(mat_dist==min(mat_dists),comp_dist==min(comp_dists)) %>%
-  ggplot(aes(x = disp_dist, y = value, col=disp_fun)) +
-  geom_smooth(method = "lm",alpha=0.5,size=0.5,se = F) +
-  geom_point() +
-  facet_grid(rows=vars(statistic),cols=vars(comp_dist,mat_dist), labeller = label_both,scales="free_y") +
+all_connections_stats %>% filter(sigma == 1) %>%
+  ggplot(aes(x = `mating distance`, y = value, col = `dispersal function`)) +
+  geom_line(
+    stat = "smooth",
+    method = "loess",
+    alpha = 0.5,
+    size = 0.5,
+    se = F
+  ) +
+  geom_point(size = 0.5) + scale_x_log10() +
+  facet_grid(
+    rows = vars(statistic),
+    cols = vars(`competition distance`, sigma),
+    labeller = global_labeller,
+    scales = "free_y"
+  ) +
   theme_minimal() +
+  theme(strip.text.x = element_text(size = 6)) +
+  labs(title = "Mating and competition distance") -> mating_competition
+
+# Effect of dispersal distance
+all_connections_stats %>% filter(`mating distance` == min(mat_dists),
+                                 `competition distance` == min(comp_dists)) %>%
+  ggplot(aes(x = sigma, y = value, col = `dispersal function`)) +
+  geom_line(
+    stat = "smooth",
+    method = "lm",
+    size = 0.5,
+    se = F,
+    alpha=0.5
+  ) +
+  geom_point(size=0.5) +
+  facet_grid(
+    rows = vars(statistic),
+    cols = vars(`competition distance`, `mating distance`),
+    labeller = global_labeller,
+    scales = "free_y"
+  ) +
+  theme_minimal() +
+  theme(strip.text.x = element_text(size = 6)) +
   labs(title = "Dispersal distance") -> dispersal_dist
 
-ggarrange(mating_competition,dispersal_dist,nrow=1,labels="auto",widths=c(2,1)) -> statistics_plots
+ggarrange(
+  mating_competition,
+  dispersal_dist,
+  nrow = 1,
+  labels = "auto",
+  widths = c(2, 1),
+  common.legend = T
+) -> statistics_plots
 
 ### Plotting locations of individuals
 ## 1. Across a mating/competition distance grid
 tree_data %>%
+  rename(
+    "competition distance" = "comp_dist",
+    "mating distance" = "mat_dist",
+    "dispersal function" = "fun") %>%
   filter(simplified == "unsimplified",
-         fun == "brownian",
-         disp_dist == 1,
+         `dispersal function` == "brownian",
+         sigma == 1,
          time == max(time)) %>%
   ggplot(aes(col = rep)) +
-  geom_sf() +
+  geom_sf(show.legend = F) +
   facet_grid(
-    cols = vars(comp_dist),
-    rows = vars(mat_dist),
-    labeller = label_both
+    cols = vars(`competition distance`),
+    rows = vars(`mating distance`),
+    labeller = global_labeller
   ) +
-  theme_minimal() -> points_plot1
-all_connections %>%
+  labs(colour="simulation repeat",
+       x="Eastings",
+       y="Northings") +
+  theme_minimal() +
+  theme(strip.text.x = element_text(size = 6),strip.text.y = element_text(size = 6)) -> points_plot1
+# showing the connections between clusters according to mating distance
+all_connections_l %>%
   filter(rep==1,
-         comp_dist==max(comp_dists),
-         disp_fun == "brownian",
-         disp_dist == 1,
+         `competition distance`==max(comp_dists),
+         `dispersal function` == "brownian",
+         sigma == 1,
          child_time == max(child_time)) %>%
   ggplot(aes()) +
   geom_sf(aes(geometry=child_location),col="grey") +
   geom_sf(aes(geometry=connection),col="lightpink4") +
   facet_grid(
-    rows = vars(comp_dist),
-    cols = vars(mat_dist),
-    labeller = label_both
+    rows = vars(`competition distance`),
+    cols = vars(`mating distance`),
+    labeller = global_labeller
   ) +
-  theme_minimal() -> mating_distance_clusters
+  theme(legend.position = "none") +
+  labs(x="Eastings",
+       y="Northings") +
+  theme_minimal() +
+  theme(strip.text.x = element_text(size = 6),strip.text.y = element_text(size = 6))  -> mating_distance_clusters
 
 ## 2. In time groups
 # a) Mating distance
-tree_data %>% ungroup() %>%
+tree_data %>%
+  ungroup() %>%
+  rename(
+    "competition distance" = "comp_dist",
+    "mating distance" = "mat_dist",
+    "dispersal function" = "fun") %>%
   filter(
     simplified == "unsimplified",
-    fun == "brownian",
-    disp_dist == 1,
-    comp_dist == 0.2,
-    mat_dist == min(mat_dist) |
-      mat_dist == max(mat_dist),
+    `dispersal function` == "brownian",
+    sigma == 1,
+    `competition distance` == 0.2,
+    `mating distance` == min(`mating distance`) |
+      `mating distance` == max(`mating distance`),
     rep == 1
-  ) %>%
+  ) %>% group_by(sim) %>%
   mutate(timegroup = cut(time, breaks = 4)) %>%
   ggplot(aes(col = timeoriginal)) +
   geom_sf() +
   facet_grid(
     cols = vars(timegroup),
-    rows = vars(mat_dist),
-    labeller = labeller(mat_dist = label_both, timegroup = label_value
-  )) +
+    rows = vars(`mating distance`),
+    labeller = global_labeller
+  ) +
   theme_minimal() +
   scale_colour_gradientn(colours = met.brewer(name = "Hokusai1")) +
   theme_minimal() +
-  labs(x = "", y = "") -> timegroups_md
+  theme(strip.text.x = element_text(size = 6),strip.text.y = element_text(size = 6)) +
+  labs(x = "Eastings",
+       y = "Northings",
+       colour="time (from root)",
+       caption = sprintf('Competition distance: %s; Sigma: %s; Dispersal function: %s',
+                         0.2,1,'"brownian"'))-> timegroups_md
 # b) competition distance
-tree_data %>% ungroup() %>%
+tree_data %>%
+  ungroup() %>%
+  rename(
+    "competition distance" = "comp_dist",
+    "mating distance" = "mat_dist",
+    "dispersal function" = "fun") %>%
   filter(
     simplified == "unsimplified",
-    fun == "brownian",
-    disp_dist == 1,
-    mat_dist == min(mat_dists),
-    comp_dist == min(comp_dists) |
-      comp_dist == max(comp_dists),
+    `dispersal function` == "brownian",
+    sigma == 1,
+    `mating distance` == min(mat_dists),
+    `competition distance` == min(comp_dists) |
+      `competition distance` == max(comp_dists),
     rep == 1
   ) %>%
   mutate(timegroup = cut(timeoriginal, breaks = 4)) %>%
@@ -356,48 +543,60 @@ tree_data %>% ungroup() %>%
   geom_sf() +
   facet_grid(
     cols = vars(timegroup),
-    rows = vars(comp_dist),
-    labeller = labeller(comp_dist = label_both, timegroup = label_value)
+    rows = vars(`competition distance`),
+    labeller = global_labeller
   ) +
   theme_minimal() +
   scale_colour_gradientn(colours = met.brewer(name = "Hokusai1")) +
   theme_minimal() +
-  labs(x = "", y = "") -> timegroups_cd
+  theme(strip.text.x = element_text(size = 6),strip.text.y = element_text(size = 6)) +
+  labs(x = "Eastings",
+       y = "Northings",
+       colour="time (from root)",
+       caption = sprintf('Mating distance: %s; Sigma: %s; Dispersal function: %s',
+                         min(mat_dists),1,'"brownian"')) -> timegroups_cd
 
-ggarrange(timegroups_md, timegroups_cd, common.legend = T,ncol=1,labels="auto") -> points_plot2
+ggarrange(
+  timegroups_md,
+  timegroups_cd,
+  common.legend = T,
+  ncol = 1,
+  labels = "auto",
+  heights = c(1,1)
+) -> points_plot2
 
 ######### Exporting all the plots
 
 curves_plots %>%
   ggsave(
-    filename = paste0("figs/", as.character(Sys.Date()), "-curves_plot.pdf"),
+    filename = paste0("figs/", as.character(Sys.Date()) ,"curves_plot.pdf"),
     device = "pdf",
-    height = 8,
-    width = 10
+    height = 9,
+    width = 7
   )
 
 statistics_plots %>%
   ggsave(
-    filename = paste0("figs/", as.character(Sys.Date()), "-statistics_plot.pdf"),
+    filename = paste0("figs/", as.character(Sys.Date()), "statistics_plot.pdf"),
     device = "pdf",
-    height = 8,
-    width = 10
+    height = 7,
+    width = 7
+  )
+
+ggarrange(points_plot1,mating_distance_clusters,ncol=1,heights = c(3,1),labels="auto") %>%
+  ggsave(
+    filename = paste0("figs/", as.character(Sys.Date()), "points.pdf"),
+    device = "pdf",
+    height = 7,
+    width = 7
   )
 
 points_plot2 %>%
   ggsave(
-    filename = paste0("figs/", as.character(Sys.Date()), "-statistics_plot.pdf"),
+    filename = paste0("figs/", as.character(Sys.Date()),"points_2.pdf"),
     device = "pdf",
-    height = 5,
-    width = 10
-  )
-
-ggarrange(points_plot1,mating_distance_clusters,ncol=1,heights = c(4,1),labels="auto") %>%
-  ggsave(
-    filename = paste0("figs/", as.character(Sys.Date()), "-points.pdf"),
-    device = "pdf",
-    height = 10,
-    width = 10
+    height = 9,
+    width = 7
   )
 
 

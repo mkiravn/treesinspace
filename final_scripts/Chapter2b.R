@@ -68,7 +68,7 @@ for (row in c(1:dim(pars)[1])) {
     time = 1,
     N = pars[row, "N"],
     center = c(0, 0),
-    radius = 25,
+    radius = 50,
     map = map,
     mate_dist = pars[row, "mat_dist"],
     competition_dist = pars[row, "comp_dist"],
@@ -251,10 +251,10 @@ ggplot(probsm) + geom_line(aes(
 
 ggarrange(monster.plot,rr.plot,ncol=1,labels="auto") %>%
   ggsave(
-    filename = paste0("figs/", as.character(Sys.Date()), "-theoretical_plots.pdf"),
+    filename = paste0("figs/", as.character(Sys.Date()), "theoretical_plots.pdf"),
     device = "pdf",
-    height = 7,
-    width = 10
+    height = 6,
+    width = 7
   )
 
 probsm <- probsm %>% filter(mat_dist %in% mat_dists)
@@ -273,14 +273,18 @@ all_connections %>% filter(simplified=="unsimplified") %>%
   ggplot(aes(x=dist,col=mat_dist)) +
   geom_density() +
   stat_function(col="black",fun = drayleigh, args = list(scale=1),alpha=0.8,lty=2) +
-  theme_minimal() +
-  labs(y="density") -> brownian_dispersal_simulated
+  theme_minimal() + lims(x=c(0,15)) +
+  labs(y="density",
+       col="mating distance",
+       x="distance") -> brownian_dispersal_simulated
 probsm %>%
   ggplot(aes(x=dist,col=mat_dist,y=p)) +
   geom_line() +
   stat_function(col="black",fun = drayleigh, args = list(scale=1),alpha=0.8,lty=2) +
-  theme_minimal() +
-  labs(y="density") -> brownian_dispersal_theoretical
+  theme_minimal() + lims(x=c(0,15)) +
+  labs(y="density",
+       col="mating distance",
+       x="distance") -> brownian_dispersal_theoretical
 ggarrange(brownian_dispersal_simulated,
           brownian_dispersal_theoretical,
           ncol=2,common.legend = T) -> brownian_dispersal
@@ -291,7 +295,9 @@ all_connections %>% filter(simplified=="unsimplified") %>%
   ggplot() +
   stat_qq(aes(sample=dist,col=mat_dist),distribution = qrayleigh,alpha=1,geom="path")  +
   geom_abline(slope=1,intercept=0,lty=2,col="black")  +
-  labs(y="simulated",x="theoretical") +
+  labs(y="simulated",
+       x="theoretical",
+       col="mating distance") +
   theme_minimal() -> brownian_qqplots
 
 # comparison to theoretical distribution
@@ -302,13 +308,17 @@ all_connections %>% filter(simplified=="unsimplified") %>%
   geom_density(aes(lty="simulated")) +
   stat_function(col="black",fun = drayleigh, args = list(scale=1),alpha=0.8,lty=2) +
   theme_minimal() +
-  facet_wrap(~mat_dist,labeller=label_both,nrow = 1) +
-  labs(y="density")  -> sim_theo
+  facet_wrap(~mat_dist,nrow = 1) +
+  labs(y="density",
+       x="distance",
+       col="mating distance",
+       lty="",
+       strip.text = element_blank())  -> sim_theo
 
-ggarrange(sim_theo,brownian_dispersal,brownian_qqplots,ncol=1,labels="auto",common.legend = T) %>%
+ggarrange(sim_theo,brownian_qqplots,ncol=1,labels="auto",common.legend = T) %>%
   ggsave(
-    filename = paste0("figs/", as.character(Sys.Date()), "-mating_distance.pdf"),
+    filename = paste0("figs/", as.character(Sys.Date()) ,"mating_distance.pdf"),
     device = "pdf",
-    height = 7,
-    width = 10
+    height = 5,
+    width = 7
   )
