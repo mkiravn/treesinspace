@@ -239,6 +239,7 @@ ThirdSideRR <- function(y,sig,rb){
 }
 probsm <- probsm %>% rowwise() %>% mutate(prr=ThirdSideRR(dist,1,as.numeric(mat_dist)))
 
+# plotting theoretical distributions
 ggplot(probsm) + geom_line(aes(
   x = dist,
   y = prr,
@@ -261,11 +262,7 @@ probsm <- probsm %>% filter(mat_dist %in% mat_dists)
 probsm$mat_dist <- factor(probsm$mat_dist, levels = mat_dists)
 probsm <- probsm %>% group_by(mat_dist) %>% mutate(cp=cumsum(p))
 
-######### Plotting
-
-
 # Checking that dispersal is normal in x and y and the norm is rayleigh
-
 
 all_connections <- all_connections %>% mutate(mat_dist=as.factor(mat_dist))
 # main plots

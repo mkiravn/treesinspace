@@ -55,7 +55,6 @@ write_delim(
 
 ######### Here we run the simulations
 
-
 # these will hold our data
 trees <- c()
 trees_us <- c()
@@ -325,22 +324,7 @@ points.plot %>%
     width = 7
   )
 
-ggarrange(
-  methods.time,
-  methods.comp,
-  labels = "auto",
-  ncol = 1
-) %>%
-  ggsave(
-    filename = paste0(
-      "figs/",
-      as.character(Sys.Date()),
-      "-inferring_location_methods.pdf"
-    ),
-    device = "pdf",
-    height = 7,
-    width = 7
-  )
+
 
 # which conditions of sampling and migration are best?
 all_locations %>% filter(time > 0, disp_fun == "brownian") %>%
@@ -351,8 +335,11 @@ all_locations %>% filter(time > 0, disp_fun == "brownian") %>%
              "centroid"),
     names_to = "method",
     values_to = "error"
-  ) %>%
-  ggplot(aes(
+  ) -> all_locations_longer
+all_locations_longer$method <- factor(all_locations_longer$method,
+                          levels = c("recursive","centroid"),
+                          ordered = TRUE)
+all_locations_longer %>%  ggplot(aes(
     y = error,
     x = migration,
     col = method,
@@ -371,51 +358,32 @@ all_locations %>% filter(time > 0, disp_fun == "brownian") %>%
   theme_minimal() +
   scale_colour_grey(end = 0.6) -> boxplot
 
-boxplot %>% ggsave(
-  filename = paste0(
-    "figs/",
-    as.character(Sys.Date()),
-    "inferring_location_boxplots.pdf"
-  ),
-  device = "pdf",
-  height = 5,
-  width = 7
-)
+all_locations %>%
+  ggplot(aes(x = time)) +
+  geom_histogram(alpha = 0.5, aes(fill = sampling)) +
+  facet_grid(cols = vars(sampling), scales = "free_y") +
+  theme_minimal() +
+  scale_x_reverse() +
+  scale_y_log10() -> histograms
 
-# ggpaired(all_locations %>% filter(time>0,disp_fun=="brownian"),
-#         cond1="recursive_error",cond2="centroid_error",col="sampling",
-#         line.size=0.2,line.color="grey",xlab="method",ylab="error")+
-#   stat_compare_means(method = "t.test", paired = TRUE,vjust =3,hide.ns = T)+
-#   facet_grid(cols=vars(migration),rows=vars(sampling))
-#
-# grouped_ggbetweenstats(
-#   data=all_locations,
-#   x=sampling,
-#   y=recursive_error,
-#   grouping.var=migration,
-#   type="p"
-# ) -> pp
-
-# all_locations %>% filter(time>0,sampling=="present") %>%
-#   pivot_longer(cols=c("recursive_error",
-#                       "centroid_error"),
-#                names_to="method",
-#                values_to="error") %>%
-#   grouped_ggwithinstats(
-#     x               = method,
-#     y               = error,
-#     type            = "p",
-#     grouping.var    = migration) ->p1
-# all_locations %>% filter(time>0,sampling=="ancient") %>%
-#   pivot_longer(cols=c("recursive_error",
-#                       "centroid_error"),
-#                names_to="method",
-#                values_to="error") %>%
-#   grouped_ggwithinstats(
-#     x               = method,
-#     y               = error,
-#     type            = "p",
-#     grouping.var    = migration) ->p2
+ggarrange(
+  methods.time,
+  methods.comp,
+  boxplot,
+  labels = "auto",
+  ncol = 1,
+  heights=c(1,1,0.75)
+) %>%
+  ggsave(
+    filename = paste0(
+      "figs/",
+      as.character(Sys.Date()),
+      "-inferring_location_methods.pdf"
+    ),
+    device = "pdf",
+    height = 8,
+    width = 7
+  )
 
 # boring tables to put in supplement
 all_locations %>% filter(time > 0) %>%
@@ -450,17 +418,6 @@ compare_means(
     as.character(Sys.Date()),
     "results_findingancestors3.png"
   ))
-
-# which method does best?
-# all_locations %>% filter(time>0) %>%
-#   pivot_longer(cols=c("recursive_error","centroid_error"),names_to="method",values_to="error") %>%
-#   ggplot(aes(y=error,x=method,col=sampling)) +
-#   geom_boxplot() +
-#   stat_compare_means(method="t.test",hide.ns = F) +
-#   facet_grid(rows=vars(migration),cols=vars(sampling))+
-#   theme_minimal() +
-#   theme(axis.text.x = element_text(angle = 45)) +
-#   stat_summary(fun.y=mean, geom="point", shape=21, size=3,fill=NA) -> boxplot.2
 
 all_locations %>% filter(time > 0) %>%
   pivot_longer(

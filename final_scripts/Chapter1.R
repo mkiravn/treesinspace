@@ -246,8 +246,8 @@ all_connections_l %>%
   ggplot(aes(x = distance,
              col = as.factor(`competition distance`),
              )) +
-  geom_density(alpha = 0.1,size=1) +
-  lims(x = c(0, 15)) +
+  geom_line(stat="density",size=0.8) +
+  lims(x = c(0, 10)) +
   theme_minimal() +
   geom_vline(
     aes(xintercept = `mating distance`),
@@ -261,9 +261,8 @@ all_connections_l %>%
     labeller = global_labeller,
     scales = "free_y"
   ) +theme(strip.text.x = element_text(size = 6)) +
-  scale_color_manual(values = met.brewer("Hiroshige", length(comp_dists)))  +
-  scale_fill_manual(values = met.brewer("Hiroshige", length(comp_dists)),guide="none")  +
-  labs(col = "competition distance",
+  scale_color_manual(values = met.brewer("Tsimshian", length(comp_dists)))  +
+  labs(col = "competition \ndistance",
        title = "Mating and competition distance",
        x = "distance",
        y = "density") -> curves_plot1
@@ -277,8 +276,8 @@ all_connections_l %>%
          sigma == 1,
          simplified == "unsimplified") %>%
   ggplot(aes(x = distance, col = `dispersal function`),size=1) +
-  geom_density(alpha = 0.5) +
-  lims(x = c(0, 15)) +
+  geom_line(stat="density") +
+  lims(x = c(0, 8)) +
   theme_minimal() +
   stat_function(
     fun = drayleigh,
@@ -336,7 +335,7 @@ ggplot() +
     lty = 2,
     col = "black"
   )  +
-  lims(x = c(0, 15)) +
+  lims(x = c(0, 8)) +
   labs(col = "distribution",
        y = "density",
        x="distance",
@@ -355,15 +354,43 @@ ggplot() +
 ggarrange(
   curves_plot2,
   theory_plot,
-  ncol = 1,
+  ncol = 2,
   common.legend = T
 )  -> dispfun_plot
 
+curves_plot2 + coord_cartesian(xlim=c(4,8),ylim=c(0,0.01)) -> curves_plot2.tails
+theory_plot + coord_cartesian(xlim=c(4,8),ylim=c(0,0.01)) -> theory_plot.tails
+
+ggarrange(
+  curves_plot2.tails,
+  theory_plot.tails,
+  ncol = 2,
+  common.legend = T
+)  -> dispfun_plot.tails
+
+# dispersal distance plot
+all_connections_l %>% filter(`competition distance` == 0,
+                             `mating distance` ==1,
+                             simplified == "unsimplified") %>%
+  ggplot() +
+  geom_line(stat="density", aes(x = distance, col = as.factor(sigma)),size=0.9) +
+  facet_grid(
+    cols = vars(`dispersal function`),
+    scales = "free",
+    labeller = global_labeller
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = met.brewer("Tsimshian",
+                                         length(disp_dists)))  +
+  labs(colour="sigma",title = "Dispersal distance (sigma)")+
+  lims(x = c(0, 15)) -> dispdist_plot
+
 ggarrange(
   curves_plot1,
+  dispdist_plot,
   dispfun_plot,
   ncol = 1,
-  heights = c(2, 1.5),
+  heights = c(2.5, 1,1.5),
   labels = "auto"
 ) -> curves_plots
 
@@ -467,6 +494,7 @@ tree_data %>%
        y="Northings") +
   theme_minimal() +
   theme(strip.text.x = element_text(size = 6),strip.text.y = element_text(size = 6)) -> points_plot1
+
 # showing the connections between clusters according to mating distance
 all_connections_l %>%
   filter(rep==1,
@@ -572,6 +600,14 @@ curves_plots %>%
     filename = paste0("figs/", as.character(Sys.Date()) ,"curves_plot.pdf"),
     device = "pdf",
     height = 9,
+    width = 7
+  )
+
+dispfun_plot.tails %>%
+  ggsave(
+    filename = paste0("figs/", as.character(Sys.Date()) ,"curves_plot_tails.pdf"),
+    device = "pdf",
+    height = 2,
     width = 7
   )
 

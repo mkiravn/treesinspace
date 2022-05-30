@@ -53,9 +53,7 @@ write_delim(
   delim = "\t"
 )
 
-
 ######### Here we run the simulations
-
 
 # these will hold our data
 trees <- c()
@@ -228,9 +226,8 @@ all_dists %>% ggplot(aes(x = dist / sqrt(edge_gens), col = simplified)) +
   theme_minimal() +
   labs(y = "density") -> estimates.md.plot_
 
-
 # pairwise distances
-all_dists  %>% filter(mat_dist == 0.2, disp_fun == "brownian") %>%
+all_dists  %>% filter(mat_dist == 0.2, disp_fun == "brownian",simplified!="unsimplified") %>%
   ggplot(aes(y = dist, x = edge_gens)) +
   #ggrastr::rasterize(geom_point(alpha = 0.5, size = 0.5,col="grey")) +
   geom_bin2d(alpha = 0.9, size = 0.5) +
@@ -240,18 +237,13 @@ all_dists  %>% filter(mat_dist == 0.2, disp_fun == "brownian") %>%
     lty = 2,
     col = "black"
   ) +
-  facet_grid(
-    rows = vars(mat_dist),
-    cols = vars(disp_fun, comp_dist),
-    labeller = label_both,
-    scales = "free_y"
-  ) +
   geom_smooth(se = F, method = "loess") +
   theme_minimal() +
   facet_wrap( ~ simplified, nrow = 1) +
   lims(y=c(0,13)) +
   labs(x="branch length (generations)",y="geographic distance") +
   scale_fill_gradientn(colours = met.brewer(name = "Hokusai2"))+
+  theme(axis.text.x = element_text(angle = 45))+
   scale_x_sqrt() -> pairwise_plot
 
 # how does relatedness decay with distance?
@@ -476,3 +468,56 @@ all_dists %>%
   ) %>% gtsave(paste0("figs/",
                       as.character(Sys.Date()),
                       "results_estimatingsigma_cut.png"))
+
+
+# Extra plots, not used in report.
+#
+# x <- c(10,30,100,300,1000)
+# p <- ggplot(all_dists %>%filter(simplified!="unsimplified"))
+# for (i in x){
+#     p <- p + geom_violin(data=all_dists %>%
+#                            filter(simplified!="unsimplified",
+#                                   edge_gens<=i) %>% mutate(i=i),
+#                          aes(y=dist,x=i,col=simplified),draw_quantiles =c(0.25, 0.5, 0.75),
+#                          width=0.4)
+# }
+# p +scale_x_log10() +theme_minimal() +facet_wrap(~simplified)
+#
+#
+# all_connections %>% filter(sim==1) %>%
+#   ggplot() +
+#   geom_sf(aes(geometry=connection),size=0.1) +
+#   geom_sf(aes(geometry=child_location,col=child_time),size=0.1) +
+#   geom_sf(data=all_connections %>% filter(sim==1,child_time==8000),
+#           aes(geometry=child_location,col=child_time),size=0.5,shape=21,fill="white") +
+#   facet_grid(cols=vars(simplified),rows=vars(child_time-parent_time<100)) +
+#   theme_minimal() +
+#   scale_colour_gradientn(colours = met.brewer(name = "Hokusai1"))
+#
+#
+# all_connections %>%
+#   filter(simplified=="unsimplified") %>%
+#   group_by(sim) %>%
+#   summarise(sigma_e=mean(dist)) %>%
+#   right_join(all_connections,by="sim") -> ac2
+#
+# ac2 %>% select(edge_gens,simplified,mat_dist,disp_fun,sim,sigma_e,dist) %>%
+#   filter(simplified=="unsimplified") %>%
+#   mutate(srg=sigma_e*sqrt(edge_gens)) %>%
+#   ggplot(aes(x=srg,y=dist)) +
+#   geom_point(size=0.2) +
+#   facet_grid(cols=vars(disp_fun),rows=vars(mat_dist)) +
+#   geom_smooth(method="lm",se=F,col="black") +
+#   labs(x="sigma_e * sqrt(branch length)",y="distance") +
+#   geom_abline(intercept = 0,slope = 1,lty=2,col="purple") +
+#   theme_minimal() -> sigmae_plot
+#
+# ggarrange(
+#   estimates.plot.matdist,sigmae_plot,
+#   labels = "auto",
+#   ncol = 1)  %>% ggsave(
+#   filename = paste0("figs/", as.character(Sys.Date()),"slope_plots_panel.pdf"),
+#   device = "pdf",
+#   height = 5,
+#   width = 7
+# )
