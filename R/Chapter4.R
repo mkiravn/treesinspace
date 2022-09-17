@@ -1,9 +1,0 @@
-### unsimplified
-
-
-# simplified
-
-
-# pairwise
-
-
