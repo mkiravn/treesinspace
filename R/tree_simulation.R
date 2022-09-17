@@ -13,7 +13,7 @@ node_times <- function(tree) {
   #
   # you can inspect the contents of an environment by calling ls(envir =
   # .GlobalEnv), which in this case is the same as running just ls()
-  env$times <- rep(NA, tree$Nnode + length(tree$tip.label))
+  ednv$times <- rep(NA, tree$Nnode + length(tree$tip.label))
 
   # set the root time in the vector to 0
   env$times[root] <- 0
@@ -247,6 +247,13 @@ treesim_connect <- function(ts){
   return(list(connections, branches))
 }
 
+#' Find ancestor by centroid method
+#'
+#'
+#' @param tree a tree of ape class phylo
+#' @param data the data associated with the tree
+#' @param stripped give all pairwise estimates or only the consensus
+#' @return The cenotrid estimates of all internal nodes of the tree
 find_ancestor_centroid <- function(tree, data, stripped=TRUE){
   # a function which estimates the location of internal nodes by getting the midpoint of tips
   # this is done pairwise- so you get many estimates for a simgle node if it has more than
@@ -273,7 +280,7 @@ find_ancestor_centroid <- function(tree, data, stripped=TRUE){
   # now for all pairs, add data
   if (stripped==FALSE){
   pairs <- expand.grid(tree$tip.label,tree$tip.label) %>% # get all pairs of tips
-    filter(Var1!=Var2) %>%
+    dplyr::filter(Var1!=Var2) %>%
     mutate(Var1=as.factor(Var1),Var2=as.factor(Var2)) %>%
     rename("n1"="Var1","n2"="Var2") %>%
     rowwise() %>%
@@ -295,11 +302,11 @@ find_ancestor_centroid <- function(tree, data, stripped=TRUE){
     mutate(multiple=st_centroid(st_union(midpoint))) %>%
     ungroup() %>%
     # check geometry validity
-    filter(st_is_valid(line)==TRUE,st_is_valid(midtomrca)==TRUE,st_is_valid(midpoint)==TRUE,st_is_valid(multiple)==TRUE)
+    dplyr::filter(st_is_valid(line)==TRUE,st_is_valid(midtomrca)==TRUE,st_is_valid(midpoint)==TRUE,st_is_valid(multiple)==TRUE)
   }
   else {
     pairs <- expand.grid(tree$tip.label,tree$tip.label) %>% # get all pairs of tips
-      filter(Var1!=Var2) %>%
+      dplyr::filter(Var1!=Var2) %>%
       mutate(Var1=as.factor(Var1),Var2=as.factor(Var2)) %>%
       rename("n1"="Var1","n2"="Var2") %>%
       rowwise() %>%
@@ -356,11 +363,16 @@ find_ancestor_rec_ <- function(tree){
   return(tree)
 }
 
-
-
+#' Find ancestor by recursive method
+#'
+#'
+#' @param tree a tree of ape class phylo
+#' @param data the data associated with the tree
+#' @return The recursive estimates of all internal nodes of the tree
 find_ancestor_recursive <- function(tree,data){
   # initialise data
   # it's important that the tree and data was put through ts_phylo first
+
   nodes <- data %>% select(node_id=phylo_id,location,time) %>%
     as.data.frame() %>%
     arrange(node_id,decreasing=FALSE) # node information
@@ -379,7 +391,6 @@ find_ancestor_recursive <- function(tree,data){
       tosolve <- nodes[nodes$time==max(nodes[unsolved,"time"]) ,"node_id"] # need to add a tiebreak if they are the same age
       if (length(tosolve)>1) tosolve <- sample(tosolve,1)
     } else tosolve <- length(tree$tip.label)+1 # in case it is the root
-    print(tosolve)
     children <- phangorn::Children(tree,tosolve) # find children
     edges <- c(dists[children[1],tosolve],dists[children[2],tosolve]) # get edge lengths
     weights <- c(edges[1]/sum(edges),edges[2]/sum(edges)) # weightings
@@ -393,14 +404,14 @@ find_ancestor_recursive <- function(tree,data){
       nodes[nodes$node_id==children[2],"var"]
     nodes$inf_loc[tosolve] <- list(inf_locn) # add to dataframe
     nodes$var[tosolve] <- var # add to dataframe
-    #print(paste(sum(is.na(nodes$inf_loc)),"nodes left."))
 
   }
   #print("done inferring!")
   # ugly dataframe stuff
   nodes <- nodes %>%
     rowwise() %>%
-    mutate(inf_x=inf_loc[[1]],inf_y=inf_loc[[2]]) %>%
+    mutate(inf_x=unlist(inf_loc)[1],inf_y=unlist(inf_loc)[2]) %>%
+    dplyr::filter(is.na(inf_x)==F) %>%
     st_as_sf(coords=c("inf_x","inf_y")) %>%
     select(-inf_loc) %>%
     rename(inf_loc=geometry) %>%
@@ -410,32 +421,36 @@ find_ancestor_recursive <- function(tree,data){
   return(tree)
 }
 
-
-pairwise_distance <- function(tr,data){
+#' Find pairwise distances between tips
+#'
+#'
+#' @param tr a tree of ape class phylo (must be recapitated)
+#' @return Pairwise geographic and genetic distances
+pairwise_distance <- function(tr){
   # gets the pairwise distance between nodes, and the time separating them
-  nodes <- data
+  data <- ts_nodes(tr)
+  nodes <- data %>% dplyr::filter(time==max(time))
   # make two dataframes with node information
   n1 <- nodes %>%
-    select(location,time,node_id) %>%
-    rename("n1_location"="location","n1_time"="time","n1"="node_id") %>%
+    select(location,time,phylo_id,node_id)  %>%
+    rename("n1_location"="location","n1_time"="time","n1"="phylo_id","n1_node_id"="node_id") %>%
     mutate(n1=as.factor(n1))
   n2 <- nodes %>%
-    select(location,time,node_id) %>%
-    rename("n2_location"="location","n2_time"="time","n2"="node_id") %>%
+    select(location,time,phylo_id,node_id)  %>%
+    rename("n2_location"="location","n2_time"="time","n2"="phylo_id","n2_node_id"="node_id") %>%
     mutate(n2=as.factor(n2))
   # matrix of distances
   dists <- dist.nodes(tr)
   # do some dataframe joining to get distances
   pairs <- expand.grid(c(1:dim(nodes)[1]),c(1:dim(nodes)[1])) %>% # get all pairs of tips
-    filter(Var1!=Var2) %>%
+    dplyr::filter(Var1!=Var2) %>%
     mutate(Var1=as.factor(Var1),Var2=as.factor(Var2)) %>%
     rename("n1"="Var1","n2"="Var2") %>%
     rowwise() %>%
-    mutate(timedist=dists[n1,n2]) %>% # distance in time along tree
+    mutate(edge_gens=dists[n1,n2]) %>% # distance in time along tree
     left_join(n1,by="n1") %>%
     left_join(n2,by="n2") %>%
-    mutate(geodist=st_length(st_cast(st_union(n1_location,n2_location),"LINESTRING")), # distance in space
-           timediff=abs(n2_time-n1_time)) %>% # time disparity (not along tree)
+    mutate(dist=st_length(st_cast(st_union(n1_location,n2_location),"LINESTRING"))) %>% # distance in space
     ungroup()
 
   return(pairs)
@@ -455,6 +470,180 @@ relcomp <- function(a, b) {
   return(comp)
 }
 
+ts_phylo_ <- function(ts, i, mode = c("index", "position"),
+                     labels = c("tskit", "pop"), quiet = FALSE) {
+  labels <- match.arg(labels)
+
+  from_slendr <- !is.null(attr(ts, "model"))
+
+  tree <- ts_tree(ts, i, mode)
+
+  if (tree$num_roots > 1)
+    stop("A tree sequence tree which is not fully coalesced or recapitated\n",
+         "cannot be converted to an R phylo tree representation (see the help\n",
+         "page of ?ts_recapitate for more details)", call. = FALSE)
+
+  if (!attr(ts, "simplified"))
+    stop("Please simplify your tree sequence first before converting a tree to\n",
+         "an R phylo tree object format (see the help page of ?ts_simplify for\n",
+         "more details)", call. = FALSE)
+
+  # get tree sequence nodes which are present in the tskit tree object
+  # (tree$preorder() just get the numerical node IDs, nothing else)
+  data <- ts_data(ts) %>%
+    dplyr::as_tibble() %>%
+    dplyr::filter(node_id %in% tree$preorder())
+
+  model <- attr(ts, "model")
+  source <- attr(ts, "source")
+  spatial <- !is.null(model$world)
+
+  if (from_slendr)
+    direction <- model$direction
+  else
+    direction <- "backward"
+
+  if (direction == "forward")
+    data <- dplyr::arrange(data, remembered, time)
+  else
+    data <- dplyr::arrange(data, remembered, -time)
+
+  # convert the edge table to a proper ape phylo object
+  # see http://ape-package.ird.fr/misc/FormatTreeR.pdf for more details
+  n_tips <- sum(data$remembered, na.rm = TRUE)
+  n_internal <- nrow(data) - n_tips
+  n_all <- n_internal + n_tips; stopifnot(n_all == nrow(data))
+
+  present_ids <- data$node_id
+  # design a lookup table of consecutive integer numbers (reversing it because
+  # in the ordered tree sequence table of nodes `data`, the focal nodes which
+  # will become the tips of the tree are at the end)
+  lookup_ids <- rev(seq_along(present_ids))
+
+  tip_labels <- dplyr::filter(data, remembered) %>%
+    { if (from_slendr) sprintf("%s (%s)", .$node_id, .$name) else .$node_id } %>%
+    as.character() %>%
+    rev()
+
+  # flip the index of the root in the lookup table
+  lookup_ids[length(lookup_ids) - n_tips] <- lookup_ids[1]
+  lookup_ids[1] <- n_tips + 1
+
+  child_ids <- present_ids[present_ids != tree$root]
+  parent_ids <- sapply(child_ids, function(i) tree$parent(i))
+
+  children <- sapply(child_ids, function(n) lookup_ids[present_ids == n])
+  parents <- sapply(parent_ids, function(n) lookup_ids[present_ids == n])
+
+  # find which focal nodes are not leaves:
+  # - first look for those nodes in the tree sequence node IDs
+  internal_ts_samples <- intersect(parent_ids, data[data$remembered, ]$node_id)
+  # - then convert them to the phylo numbering
+  internal_phylo_samples <- sapply(internal_ts_samples, function(n) lookup_ids[present_ids == n])
+
+  # and then link them to dummy internal nodes, effectively turning them into
+  # proper leaves
+  dummies <- vector(mode = "integer", length(internal_ts_samples))
+  if (length(dummies) > 0)
+    warning("Some focal nodes in the tree are internal nodes (i.e. represent ancestors\n",
+            "of some focal nodes forming the tips of the tree). This is not permitted\n",
+            "by standard phylogenetic tree framework such as that implemented by the ape\n",
+            "R package, which assumes that samples are present at the tips of a tree.\n",
+            "To circumvent this problem, these focal internal nodes have been\n",
+            "attached to the tree via zero-length branches linking them to 'dummy' nodes.\n",
+            "In total ", length(dummies), " of such nodes have been created and they are ",
+            "indicated by `phylo_id`\nvalues larger than ", n_all, ".", call. = FALSE)
+  for (d in seq_along(dummies)) {
+    ts_node <- as.integer(internal_ts_samples[d])
+    phylo_node <- as.integer(internal_phylo_samples[d])
+    dummy <- n_all + d
+    node_parent <- lookup_ids[present_ids == tree$parent(ts_node)]
+    node_children <- sapply(unlist(tree$children(ts_node)), function(n) lookup_ids[present_ids == n])
+
+    # replace the focal node with a dummy node, linking to its parent and
+    # children (all done in the phylo index space)
+    parents[children %in% node_children] <- dummy
+    children[children == phylo_node] <- dummy
+
+    # add a new link from the dummy node to the real sample
+    children <- c(children, phylo_node)
+    parents <- c(parents, dummy)
+
+    dummies[d] <- dummy
+  }
+
+  # bind the two columns back into an edge matrix
+  edge <- cbind(as.integer(parents), as.integer(children))
+
+  # create vector of edge lengths (adding zero-length branches linking the dummy
+  # nodes)
+  children_times <- sapply(child_ids, function(n) data[data$node_id == n, ]$time)
+  parent_times <- sapply(parent_ids, function(n) data[data$node_id == n, ]$time)
+  edge_lengths <- c(abs(parent_times - children_times), rep(0, length(dummies)))
+
+  data$phylo_id <- sapply(data$node_id, function(n) lookup_ids[present_ids == n])
+  columns <- c()
+  if (source == "SLiM") {
+    if (spatial) columns <- c(columns, "location")
+    columns <- c(columns, c("remembered", "retained", "alive", "pedigree_id"))
+  } else
+    stop("Non-SLiM tree sequences are not supported by this customized ts_phylo", call. = FALSE)
+  name_col <- if (from_slendr) "name" else NULL
+  data <- dplyr::select(
+    data, !!name_col, pop, node_id, phylo_id, time, !!columns, ind_id
+  )
+  # add fake dummy information to the processed tree sequence table so that
+  # the user knows what is real and what is not straight from the ts_phylo()
+  # output
+  if (length(dummies)) {
+    data <- dplyr::bind_rows(
+      data,
+      data.frame(
+        name = NA,
+        pop = sapply(internal_ts_samples,
+                     function(n) data[data$node_id == n, ]$pop),
+        node_id = NA, phylo_id = dummies,
+        time = sapply(internal_ts_samples,
+                      function(n) data[data$node_id == n, ]$time)
+      )
+    )
+  }
+  if (source == "SLiM" && spatial)
+    data <- sf::st_as_sf(data)
+
+  class(data) <- set_class(data, "nodes")
+
+  # generate appropriate internal node labels based on the user's choice
+  elem <- if (labels == "pop") "pop" else "node_id"
+  node_labels <- purrr::map_chr(unique(sort(parents)),
+                                ~ data[data$phylo_id == .x, ][[elem]])
+
+  tree <- list(
+    edge = edge,
+    edge.length = edge_lengths,
+    node.label = node_labels,
+    tip.label = tip_labels,
+    Nnode = n_internal + length(dummies)
+  )
+  class(tree) <- c("slendr_phylo", "phylo")
+
+  check_log <- utils::capture.output(ape::checkValidPhylo(tree))
+
+  # if there are fatal issues, report them and signal an error
+  if (any(grepl("FATAL", check_log)))
+    stop(paste(check_log, collapse = "\n"), call. = FALSE)
+
+  if (!quiet) cat(check_log, sep = "\n")
+
+  # subset ts_nodes result to only those nodes that are present in the phylo
+  # object, adding another column with the rearranged node IDs
+  attr(tree, "model") <- attr(ts, "model")
+  attr(tree, "ts") <- ts
+  attr(tree, "nodes") <- data
+  attr(tree, "srouce") <- attr(ts, "source")
+
+  tree
+}
 
 
 
