@@ -109,6 +109,7 @@ convert_trees <- function(trees,pars){
 
 
 run_slendr_simulation <- function(pars,map,pathout,samplenum=NULL,pairs=F){
+  pwds <- data.frame()
   # these will hold our data
   trees <- c()
   trees_us <- c()
@@ -174,7 +175,6 @@ run_slendr_simulation <- function(pars,map,pathout,samplenum=NULL,pairs=F){
     trees_us <- c(trees_us, tsu)
 
     if (pairs==T){
-      pwds <- data.frame()
       # get pairwise distances
       pwd <- ts %>% ts_recapitate(Ne = pars[row, "N"],
                                   recombination_rate = 0,
