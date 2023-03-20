@@ -22,7 +22,7 @@ map <- world(
   landscape = "blank"
 )
 
-res <- run_slendr_simulation(pars,map=map,pathout="estimation",pairs=T)
+res <- run_slendr_simulation(pars,map=map,pathout="estimation",pairs=T,samplenum = 50)
 
 trees <- res$simplified
 trees_us <- res$unsimplified
@@ -65,7 +65,7 @@ pwds %>%
         edge_gens
       )
   ) -> all_dists
-
+all_dists %>% write_delim(file="all_dists.tsv",delim="\t")
 #  Estimates from unsimplified trees, simplified trees and tips only
 estimates <- all_dists %>%
   group_by(sigma, mat_dist, disp_fun, simplified, rep, comp_dist) %>%
@@ -75,10 +75,10 @@ estimates <- all_dists %>%
               sum((distance /
                 sqrt(edge_gens)
               ) ^ 2))) %>% ungroup()
-
+estimates %>% write_delim(file="estimates.tsv",delim="\t")
 # pairwise distances
 all_dists  %>%
-  dplyr::filter(mat_dist == 0.2, disp_fun == "brownian",simplified!="unsimplified") %>%
+  dplyr::filter(disp_fun == "brownian",simplified!="unsimplified",mat_dist ==0.2) %>%
   ggplot(aes(y = distance, x = edge_gens)) +
   #ggrastr::rasterize(geom_point(alpha = 0.5, size = 0.5,col="grey")) +
   geom_bin2d(alpha = 0.9, size = 0.5) +
@@ -88,19 +88,19 @@ all_dists  %>%
     lty = 2,
     col = "black"
   ) +
-  geom_smooth(se = F, method = "loess") +
+  geom_smooth(se = F, method = "loess",col="indianred") +
   theme_minimal() +
-  facet_wrap( ~ simplified, nrow = 1) +
-  lims(y=c(0,13)) +
+  facet_grid( cols=vars(simplified)) +
+  lims(y=c(0,15)) +
   labs(x="branch length (generations)",y="geographic distance") +
   scale_fill_gradientn(colours = met.brewer(name = "Hokusai2"))+
   theme(axis.text.x = element_text(angle = 45))+
   scale_x_sqrt() -> pairwise_plot
 
-# how does relatedness decay with distance?
+# how does distance increase with relatedness?
 all_dists  %>%
-  dplyr::filter(mat_dist == 0.2, disp_fun == "brownian") %>%
-  ggplot(aes(x = distance, y = edge_gens)) +
+  dplyr::filter(mat_dist == 0.2, disp_fun == "brownian", simplified!="unsimplified") %>%
+  ggplot(aes(y = edge_gens, x = distance)) +
   #ggrastr::rasterize(geom_point(alpha = 0.5, size = 0.5,col="grey")) +
   geom_bin2d(alpha = 0.9, size = 0.5) +
   stat_function(
@@ -116,19 +116,20 @@ all_dists  %>%
     scales = "free_y"
   ) +
   geom_smooth(se = F, method = "loess") +
+  scale_y_sqrt() +
   theme_minimal() +
   facet_wrap( ~ simplified, nrow = 1) +
-  labs(y="branch length (generations)",x="geographic distance") +
+  labs(x="genetic distance (generations)",y="geographic distance") +
   scale_fill_gradientn(colours = met.brewer(name = "Hokusai2")) -> pairwise_plot2
 
-pairwise_plot2 %>%  ggsave(
+pairwise_plot %>%  ggsave(
   filename = paste0("figs/", as.character(Sys.Date()), "pairs.pdf"),
   device = "pdf",
   height = 3,
   width = 7
 )
 
-estimates_cut <- all_dists %>%
+ estimates_cut <- all_dists %>%
   group_by(mat_dist, disp_fun, simplified, rep, comp_dist, shortedge = edge_gens <
              100) %>%
   summarise(n = n(),
@@ -141,14 +142,15 @@ estimates_cut <- all_dists %>%
 
 ggplot(data = dplyr::filter(estimates),
        aes(col = simplified, x = mat_dist, y = sigma_d)) +
+  geom_hline(yintercept = 1,col="grey") +
   geom_quasirandom(size = 2,width = 0.1) +
-  geom_smooth(se = F, size = 0.5,method="lm") +
+  geom_smooth(se = F, size = 0.5) +
   theme_minimal() +
   facet_grid(
     cols = vars(disp_fun),
     scales = "free_y"
   ) +
-  labs(y = "estimated sigma",
+  labs(y = TeX("$\\hat{\\sigma}_{ML}$"),
        x="mating distance") -> estimates.plot.matdist
 
 
@@ -183,29 +185,28 @@ all_dists %>%
        x="branch length (generations)") -> h2
 ggarrange(h1,h2,common.legend = T,ncol=1) -> hist.plot
 
-all_dists %>%
-  dplyr::filter(mat_dist == 0.2,disp_fun=="brownian") %>%
+dplyr::filter(all_dists,mat_dist == 0.2,disp_fun=="brownian") %>%
   ggplot(aes(y = distance / (sqrt(edge_gens*pi/2)),x=simplified),
          alpha=0.1,size=0.5) +
   geom_violin(data=all_dists %>%
                 dplyr::filter(mat_dist == 0.2,disp_fun=="brownian",edge_gens<100),
               aes(x=simplified,col="branches \n>100 generations \nexcluded"),
-              alpha=0.1,size=0.5,lty=3) +
+              alpha=0.2,size=0.5,lty=1,fill="aliceblue") +
   geom_hline(yintercept=1,col="grey")+
-  geom_violin(aes(col="all branches"),alpha=0.1,size=0.5) +
-  geom_point(data = estimates %>%
-               dplyr::filter(mat_dist == 0.2,disp_fun=="brownian"),
-             aes( y = sigma_d,
-                  shape=as.factor(rep),
-                  x=simplified,
-                  col="all branches"),
-             size=2) +
+  geom_violin(aes(col="all branches"),alpha=0.2,size=0.5,fill="mistyrose") +
   geom_point(data = estimates_cut %>%
                dplyr::filter(mat_dist == 0.2,disp_fun=="brownian",shortedge==T),
              aes( y = sigma_d,
                   shape=as.factor(rep),
                   x=simplified,
                   col="branches \n>100 generations \nexcluded"),
+             size=2) +
+  geom_point(data = estimates %>%
+               dplyr::filter(mat_dist == 0.2,disp_fun=="brownian"),
+             aes( y = sigma_d,
+                  shape=as.factor(rep),
+                  x=simplified,
+                  col="all branches"),
              size=2) +
   # geom_line(data = estimates %>%  dplyr::filter(mat_dist == 0.2,disp_fun=="brownian"), aes(
   #   y = sigma_d,
@@ -218,17 +219,21 @@ all_dists %>%
   labs(shape="simulation replicate",
        col="",x="",y = TeX("$\\hat{\\sigma}_{ML}$")) -> estimates.plot.cut.2
 
-ggarrange(
-  estimates.plot.cut.2,
-  estimates.plot.matdist,
-  labels = "auto", heights=c(2,1),
-  ncol = 1)  %>%
-  ggsave(
-    filename = paste0("figs/",
-                      as.character(Sys.Date()),
-                      "estimate_plots_cut.pdf"),
-    device = "pdf",
-    height = 7,
-    width = 7
-  )
+save.image(file = "estimation.RData")
 
+
+estimates.plot.matdist %>% ggsave(filename=paste0("figs/",
+                                                  as.character(Sys.Date()),
+                                                  "estimate_plots_md.pdf"),
+                                  device = "pdf",
+                                  height = 3,
+                                  width = 7
+                                  )
+
+estimates.plot.cut.2 %>% ggsave(filename=paste0("figs/",
+                                                  as.character(Sys.Date()),
+                                                  "estimate_plots_cut.pdf"),
+                                  device = "pdf",
+                                  height = 5,
+                                  width = 7
+)

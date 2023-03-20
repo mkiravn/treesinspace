@@ -270,7 +270,7 @@ all_locations %>% filter(time > 0) %>%
   ) %>%
   ggplot(aes(x = time, y = error, col = method)) +
   geom_line(aes(group=node_id+time),col="grey",alpha=0.8) +
-  facet_grid(cols = vars(sampling),rows=vars(migration), labeller = label_value,scales="free_y") +
+  facet_grid(cols = vars(sampling),rows=vars(migration), labeller = label_value) +
   geom_point(alpha = 1, size = 0.8) +
   geom_line(stat="smooth",method="gam",size=0.5,se=F,col="black",aes(lty=method)) +
   scale_x_reverse() +

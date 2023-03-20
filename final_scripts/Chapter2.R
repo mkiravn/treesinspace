@@ -268,7 +268,7 @@ all_connections %>% filter(simplified=="unsimplified") %>%
   labs(x="x displacement",y="y displacement")+
   geom_density_2d(alpha=1,show.legend = F,col="grey") +
   stat_cor(col="black",geom="label") +
-  coord_fixed()-> brownian_dispersal_angle
+  coord_fixed() -> brownian_dispersal_angle
 ggarrange(brownian_plots,
           brownian_dispersal_angle,
           ncol = 2,

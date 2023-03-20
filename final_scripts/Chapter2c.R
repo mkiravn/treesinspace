@@ -270,12 +270,12 @@ all_dists  %>% filter(mat_dist == 0.2, disp_fun == "brownian") %>%
   scale_fill_gradientn(colours = met.brewer(name = "Hokusai2")) -> pairwise_plot2
 
 pairwise_plot2 %>%  ggsave(
-  filename = paste0("figs/", as.character(Sys.Date()), "pairs.pdf"),
+  filename = paste0("figs/", "pairs.pdf"),
   device = "pdf",
   height = 3,
   width = 7
 )
-
+##### got here
 #  Estimates from unsimplified trees, simplified trees and tips only
 estimates_cut <- all_dists %>%
   group_by(mat_dist, disp_fun, simplified, rep, comp_dist, shortedge = edge_gens <
