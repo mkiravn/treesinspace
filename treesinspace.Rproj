@@ -18,3 +18,7 @@ StripTrailingWhitespace: Yes
 BuildType: Package
 PackageUseDevtools: Yes
 PackageInstallArgs: --no-multiarch --with-keep.source
+
+PythonType: conda
+PythonVersion: 3.11.0
+PythonPath: ~/Library/r-miniconda-arm64/envs/Python-3.11_msprime-1.2.0_tskit-0.5.4_pyslim-1.0.1/bin/python

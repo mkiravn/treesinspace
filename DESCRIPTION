@@ -1,11 +1,12 @@
 Package: treesinspace
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Spatial population genetics analyses.
 Version: 0.1.0
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
+Author: Mariadaria K. Ianni-Ravn, Martin Petr, Fernando Racimo
+Maintainer: The package maintainer <mianniravn@uchicago.edu>
+Description: This package produces the analyses and figures in
+    Exploring the effects of ecological parameters on the spatial
+    structure of genetic tree sequences.
 License: What license is it under?
 Encoding: UTF-8
 LazyData: true

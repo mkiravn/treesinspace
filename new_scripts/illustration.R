@@ -20,7 +20,7 @@ disp_funs <-
 reps <-
   c(1) # number of simulation runs for each parameter combination
 ngens <- 10 # number of generations
-fileout <- "part1"
+fileout <- "illustration"
 pars <- set_slendr_pars(Ns,mat_dists,comp_dists,disp_dists,reps,ngens,fileout)
 
 # defining a world
@@ -32,7 +32,7 @@ map <- world(
   landscape = "blank"
 )
 
-res <- run_slendr_simulation(pars,map=map,pathout="part1")
+res <- run_slendr_simulation(pars,map=map,pathout=fileout)
 
 trees <- res$simplified
 trees_us <- res$unsimplified

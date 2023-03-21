@@ -68,7 +68,7 @@ all_connections <- all_connections %>%
   mutate(mat_dist=as.factor(mat_dist))
 
 # the plot to output properly
-probsm %>%
+probsm %>% rename("mating distance"="mat_dist") %>%
   ggplot() +
   stat_function(col="orchid",fun = drayleigh, args = list(scale=1),alpha=0.8,lty=1) +
   geom_line(aes(x=dist,y=p,lty="theoretical")) +
@@ -77,7 +77,7 @@ probsm %>%
                                   mat_dist %in% factor(mat_dists)),
                aes(x=distance,lty="simulated")) +
   theme_minimal() + lims(x=c(0,15)) +
-  facet_grid(cols=vars(mat_dist),labeller=label_both) +
+  facet_grid(cols=vars(`mating distance`),labeller=label_both) +
   labs(y="density",
        lty="",
        x="distance") -> brownian_dispersal_output

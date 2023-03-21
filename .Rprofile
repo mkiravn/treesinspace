@@ -1,7 +1,6 @@
-# source("renv/activate.R")
 cat("Welcome to the treesinspace project.\n")
+require(slendr)
 devtools::load_all("~/treesinspace")
-devtools::load_all("~/slendr_treesinspace") # this is the correct version of slendr for compatibility. Pulled from https://github.com/bodkan/slendr.git
 require(ggplot2)
 require(tidyverse)
 require(ape)
@@ -23,5 +22,6 @@ require(testthat)
 require(cowplot)
 # setting up slendr virtual environment
 setup_env()
+init_env()
 check_env()
 
