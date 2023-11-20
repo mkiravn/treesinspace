@@ -1,20 +1,14 @@
 ######## script for treesinspace
-### load libraries and set up
-# devtools::load_all("~/treesinspace")
-# library(slendr)
-# library(testthat)
-# library(cowplot)
-# setup_env()
-# check_env()
 library(latex2exp)
+library(spatstat)
 set.seed(206)
 
-##### Part 1: exploration of parameters
+##### Part 1: exploration of parameters. Illustrate positions of individuals.
 # defining parameters
-Ns <- 50 # number of individuals in population
-mat_dists <- c(1, 5, 10, 100) # mating distance
-comp_dists <- c(0, 0.2, 20, 40) # competition distance
-disp_dists <- c(1,5,10) # dispersal distance (sigma)
+Ns <- 200 # number of individuals in population
+mat_dists <- c(.2, 2, 20, 200) # mating distance
+comp_dists <- c(0, .2, 2, 20, 200) # competition distance
+disp_dists <- c(1) # dispersal distance (sigma)
 disp_funs <-
   c("brownian") # dispersal kernel
 reps <-
@@ -48,6 +42,10 @@ tree_data <- tree_data %>%
 
 all_connections_mc <- retrieve_connections(trees,trees_us,pars,nice_names=T)
 
+all_connections_mc <- all_connections_mc %>% mutate(parent_time = - (max(parent_time) - parent_time))
+
+all_connections_mc %>% write_delim("illustration_conns.tsv",delim="\t")
+
 ######### Plotting
 global_labeller <- labeller(
   .default = label_value,
@@ -56,6 +54,7 @@ global_labeller <- labeller(
   sigma = label_both
 )
 
+all_connections_mc <-  all_connections_mc %>% mutate(parent_time = - parent_time)
 
 all_connections_mc %>%
   dplyr::filter(simplified == "unsimplified",
@@ -68,10 +67,10 @@ all_connections_mc %>%
     rows = vars(`mating distance`),
     labeller = label_both
   ) +
-  geom_sf(aes(geometry=connection),alpha=0.4,col="grey",size=0.5)+
+  #geom_sf(aes(geometry=connection),alpha=0.4,col="grey",size=0.5)+
   scale_colour_gradientn(colours = met.brewer(name = "Hokusai2")) +
   theme_minimal()+
-  labs(color="time")+
+  labs(color="time in past",x="Eastings",y="Northings")+
   theme(strip.text.x = element_text(size = 6),
         strip.text.y = element_text(size = 6))-> points_plot1
 
@@ -82,3 +81,5 @@ points_plot1 %>%
     height = 5,
     width = 7
   )
+
+

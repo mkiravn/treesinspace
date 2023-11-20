@@ -1,21 +1,21 @@
 ######## script for treesinspace
 library(latex2exp)
+library(phyloTop)
 set.seed(206)
 
 ##### Part 1: exploration of parameters
 # defining parameters
 Ns <- 100 # number of individuals in population
-mat_dists <- c(1, 5, 10, 100) # mating distance
-comp_dists <- c(0, 0.2, 20, 40) # competition distance
+mat_dists <- c(.2, 2, 20, 200)# mating distance
+comp_dists <- c(0, .2, 2, 20, 200) # competition distance
 disp_dists <- c(1:3) # dispersal distance (sigma)
 disp_funs <-
-  c("brownian", "half-normal", "cauchy", "exponential", "uniform") # dispersal kernel
+  c("brownian", "normal", "cauchy", "exponential", "uniform") # dispersal kernel
 reps <-
-  c(1:10) # number of simulation runs for each parameter combination
+  c(1:20) # number of simulation runs for each parameter combination
 ngens <- 50 # number of generations
 fileout <- "exploration"
 pars <- set_slendr_pars(Ns,mat_dists,comp_dists,disp_dists,reps,ngens,fileout)
-
 # defining a world
 map <- world(
   xrange = c(-25, 25),
@@ -51,13 +51,14 @@ global_labeller <- labeller(
 # rename normal to half-normal
 all_connections_l <- all_connections_l %>%
   mutate(`dispersal function` = str_replace(`dispersal function`, "normal", "half-normal"))
-# in case you want to write out the table all_connections_l %>% write_delim("conns.tsv",delim="\t")
-# in case you need to read in the table all_connections_l <- read.delim("conns.tsv",check.names=FALSE)
+
+all_connections_l %>% write_delim("exploration_conns.tsv",delim="\t")
+# in case you need to read in the table all_connections_l <- read.delim("exploration_conns.tsv",check.names=FALSE)
 
 # Plot of dispersal function
 all_connections_l %>%
   dplyr::filter(
-    `competition distance` == 0.2,
+    `competition distance` == min(comp_dists),
     `mating distance` == min(mat_dists),
     sigma == 1,
     simplified == "unsimplified"
@@ -71,7 +72,7 @@ all_connections_l %>%
     col = "dispersal function",
     y = "density",
     x = "distance",
-    subtitle = "Simulated"
+    subtitle = "Sampled from spatial simulations"
   ) -> curves_plot2
 
 
@@ -125,19 +126,18 @@ ggplot() +
       "uniform" = hue_pal()(5)[5]
     )
   ) -> theory_plot
-
+# plot of tails
 curves_plot2 +
-  #geom_histogram(binwidth=0.2,aes(fill=`dispersal function`,y=..density..),alpha=0.01) +
   coord_cartesian(xlim = c(4, 8), ylim = c(0, 0.01)) -> curves_plot2.tails
 theory_plot + coord_cartesian(xlim = c(4, 8), ylim = c(0, 0.01)) -> theory_plot.tails
-
+# arranging into one plot
 ggarrange(curves_plot2,
           theory_plot,
           curves_plot2.tails,
           theory_plot.tails,
           heights = c(4,3),
           common.legend = T)  -> dispfun_plot
-
+# writing out
 dispfun_plot %>%
   ggsave(
     filename = paste0("figs/", as.character(Sys.Date()), "dispfun_plot.pdf"),
@@ -272,7 +272,7 @@ evar_plot %>%
 
 # plot of dispersal distance curves
 all_connections_l %>%
-  dplyr::filter(`mating distance`==1,`competition distance`==0.2,simplified=="unsimplified") %>%
+  dplyr::filter(`mating distance`==min(mat_dists),`competition distance`==min(comp_dists),simplified=="unsimplified") %>%
   ggplot(aes(x = distance, col=as.factor(sigma)), size = 1) +
   facet_wrap(~`dispersal function`,nrow=1) +
   geom_line(stat = "density",bw=0.1) +
@@ -293,6 +293,3 @@ disp_dist_curves_plot %>%
     height = 3,
     width = 7
   )
-
-
-

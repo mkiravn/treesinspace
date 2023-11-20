@@ -36,7 +36,7 @@ tree_data <- tree_data %>%
   mutate(timeoriginal = time,
          time = time - min(time))
 
-all_connections <- all_connections %>% rbind(retrieve_connections(trees,trees_us,pars))
+all_connections <- retrieve_connections(trees,trees_us,pars)
 
 # reading in theoretical results
 probsm <- read_delim("data/ThirdSidePDF.tsv",col_names = seq(1,10,0.2))
@@ -49,14 +49,6 @@ ThirdSideRR <- function(y,sig,rb){
   0.5*drayleigh(y,scale=sig) + 0.5*drayleigh(y,scale=sqrt(sig^2+rb^2))
 }
 probsm <- probsm %>% rowwise() %>% mutate(prr=ThirdSideRR(dist,1,as.numeric(mat_dist)))
-
-ggarrange(monster.plot,rr.plot,ncol=1,labels="auto") %>%
-  ggsave(
-    filename = paste0("figs/", as.character(Sys.Date()), "theoretical_plots.pdf"),
-    device = "pdf",
-    height = 6,
-    width = 7
-  )
 
 
 probsm <- probsm %>%
@@ -74,7 +66,8 @@ probsm %>% rename("mating distance"="mat_dist") %>%
   geom_line(aes(x=dist,y=p,lty="theoretical")) +
   geom_density(data=dplyr::filter(all_connections,
                                   simplified=="unsimplified",
-                                  mat_dist %in% factor(mat_dists)),
+                                  mat_dist %in% factor(mat_dists)) %>%
+                 rename(`mating distance`=mat_dist),
                aes(x=distance,lty="simulated")) +
   theme_minimal() + lims(x=c(0,15)) +
   facet_grid(cols=vars(`mating distance`),labeller=label_both) +

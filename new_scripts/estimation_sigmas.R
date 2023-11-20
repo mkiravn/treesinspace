@@ -1,17 +1,18 @@
 set.seed(206)
 library(latex2exp)
 
-### A script to simulate trees and get the ML estimate of sigma
+
+### A script to simulate trees and get the ML estimate of sigma across a range of true dispersal distances
 # defining parameters
 n <- 2000
 Ns <- n
-mat_dists <- c(0.2, 0.5, 1, 2, 5) # mate distance
+mat_dists <- c(0.2) # mate distance
 comp_dists <- c(0.2) # competition distance
-disp_dists <- c(1) # mean dispersal distance
-disp_funs <- c("brownian", "cauchy")
+disp_dists <- c(1:5) # mean dispersal distance
+disp_funs <- c("brownian")
 reps <- c(1:5)
 ngens <- 8000
-fileout <- "estimation"
+fileout <- "estimation_sigmas"
 pars <- set_slendr_pars(Ns,mat_dists,comp_dists,disp_dists,reps,ngens,fileout)
 
 # defining a world
@@ -23,7 +24,7 @@ map <- world(
   landscape = "blank"
 )
 
-res <- run_slendr_simulation(pars,map=map,pathout="estimation",pairs=T,samplenum = 50)
+res <- run_slendr_simulation(pars,map=map,pathout="estimation_sigmas",pairs=T,samplenum = 50)
 
 trees <- res$simplified
 trees_us <- res$unsimplified
@@ -37,12 +38,11 @@ tree_data <- tree_data %>%
   mutate(timeoriginal = time,
          time = time - min(time))
 
-
 all_connections <- retrieve_connections(trees,trees_us,pars)
 all_connections <- all_connections %>% mutate(edge_gens=child_time-parent_time)
 pwds <- res$pairs
 pwds %>%
-  mutate(simplified = "tips only",parent_time=ngens-edge_gens/2) %>%
+  mutate(simplified = "tips only") %>%
   distinct(.keep_all = T, edge_gens, dist) %>%
   select(mat_dist,
          comp_dist,
@@ -52,8 +52,7 @@ pwds %>%
          sim,
          rep,
          distance=dist,
-         edge_gens,
-         parent_time) %>%
+         edge_gens) %>%
   rbind(
     all_connections %>%
       select(
@@ -65,17 +64,10 @@ pwds %>%
         sim,
         rep,
         distance,
-        edge_gens,
-        parent_time
+        edge_gens
       )
   ) -> all_dists
-
-all_connections %>% write_delim("estimation_conns.tsv",delim="\t")
-all_dists %>% write_delim(file="estimation_dists.tsv",delim="\t")
-# all_dists <- read_delim(file="estimation_dists.tsv",delim="\t")
-
-
-
+all_dists %>% write_delim(file="all_dists_sigmas.tsv",delim="\t")
 #  Estimates from unsimplified trees, simplified trees and tips only
 estimates <- all_dists %>%
   group_by(sigma, mat_dist, disp_fun, simplified, rep, comp_dist) %>%
@@ -84,22 +76,8 @@ estimates <- all_dists %>%
             ))) *
               sum((distance /
                 sqrt(edge_gens)
-              ) ^ 2))) %>% ungroup() %>%
-  mutate(recent=FALSE)
-
-estimates_recent <- all_dists %>%
-  group_by(sigma, mat_dist, disp_fun, simplified, rep, comp_dist, recent = parent_time > ngens-100) %>%
-  summarise(n = n(),
-            sigma_d = sqrt((1 / (2 * n(
-            ))) *
-              sum((distance /
-                     sqrt(edge_gens)
-              ) ^ 2))) %>% ungroup() %>%
-  dplyr::filter(recent)
-
-estimates <- rbind(estimates_recent,estimates)
-
-estimates %>% write_delim(file="estimates.tsv",delim="\t")
+              ) ^ 2))) %>% ungroup()
+estimates %>% write_delim(file="estimates_sigmas.tsv",delim="\t")
 # pairwise distances
 all_dists  %>%
   dplyr::filter(disp_fun == "brownian",simplified!="unsimplified",mat_dist ==0.2) %>%
@@ -153,28 +131,18 @@ pairwise_plot %>%  ggsave(
   width = 7
 )
 
- # estimates_cut <- all_dists %>%
- #  group_by(mat_dist, disp_fun, simplified, rep, comp_dist, shortedge = edge_gens <
- #             100, recent) %>%
- #  summarise(n = n(),
- #            sigma_d = sqrt((1 / (2 * n(
- #            ))) *
- #              sum((distance / sqrt(
- #                sqrt(edge_gens)
- #              )) ^ 2))) %>% ungroup()
- #
- # estimates_cut_recent <- all_dists %>% filter(recent) %>%
- #   group_by(mat_dist, disp_fun, simplified, rep, comp_dist) %>%
- #   summarise(n = n(),
- #             sigma_d = sqrt((1 / (2 * n(
- #             ))) *
- #               sum((distance / sqrt(
- #                 sqrt(edge_gens)
- #               )) ^ 2))) %>% ungroup()
- #
+ estimates_cut <- all_dists %>%
+  group_by(mat_dist, disp_fun, simplified, rep, comp_dist, shortedge = edge_gens <
+             100) %>%
+  summarise(n = n(),
+            sigma_d = sqrt((1 / (2 * n(
+            ))) *
+              sum((distance / sqrt(
+                sqrt(edge_gens)
+              )) ^ 2))) %>% ungroup()
 
 
-ggplot(data = dplyr::filter(estimates,recent==FALSE),
+ggplot(data = dplyr::filter(estimates),
        aes(col = simplified, x = mat_dist, y = sigma_d)) +
   geom_hline(yintercept = 1,col="grey") +
   geom_quasirandom(size = 2,width = 0.1) +
@@ -219,40 +187,41 @@ all_dists %>%
        x="branch length (generations)") -> h2
 ggarrange(h1,h2,common.legend = T,ncol=1) -> hist.plot
 
-
-estimates <- estimates %>%
-  mutate(simplified_fct = factor(simplified, levels = c('unsimplified', 'simplified', 'tips only')))
-all_dists <- all_dists %>%
-  mutate(simplified_fct = factor(simplified, levels = c('unsimplified', 'simplified', 'tips only')))
-
-
 dplyr::filter(all_dists,mat_dist == 0.2,disp_fun=="brownian") %>%
-  ggplot(aes(y = distance / (sqrt(edge_gens*pi/2)),x=simplified_fct),
+  ggplot(aes(y = distance / (sqrt(edge_gens*pi/2)),x=simplified),
          alpha=0.1,size=0.5) +
-  geom_hline(yintercept=1,col="grey")+
-  # add violins of all the ensemble of branch-wise contributions
   geom_violin(data=all_dists %>%
-                dplyr::filter(mat_dist == 0.2,disp_fun=="brownian",parent_time > ngens-100),
-              aes(col="tree cut at \n100 generations \nin past"),
+                dplyr::filter(mat_dist == 0.2,disp_fun=="brownian",edge_gens<100),
+              aes(x=simplified,col="branches \n>100 generations \nexcluded"),
               alpha=0.2,size=0.5,lty=1,fill="aliceblue") +
+  geom_hline(yintercept=1,col="grey")+
   geom_violin(aes(col="all branches"),alpha=0.2,size=0.5,fill="mistyrose") +
-  # add points for estimates
-  geom_point(data = estimates %>%
-               dplyr::filter(mat_dist == 0.2,disp_fun=="brownian",recent),
+  geom_point(data = estimates_cut %>%
+               dplyr::filter(mat_dist == 0.2,disp_fun=="brownian",shortedge==T),
              aes( y = sigma_d,
-                  col="tree cut at \n100 generations \nin past"),
+                  shape=as.factor(rep),
+                  x=simplified,
+                  col="branches \n>100 generations \nexcluded"),
              size=2) +
   geom_point(data = estimates %>%
-               dplyr::filter(mat_dist == 0.2,disp_fun=="brownian",recent==FALSE),
+               dplyr::filter(mat_dist == 0.2,disp_fun=="brownian"),
              aes( y = sigma_d,
+                  shape=as.factor(rep),
+                  x=simplified,
                   col="all branches"),
              size=2) +
+  # geom_line(data = estimates %>%  dplyr::filter(mat_dist == 0.2,disp_fun=="brownian"), aes(
+  #   y = sigma_d,
+  #   x=simplified,group=rep,col="all branches"),lty=2)+
+  # geom_line(data = estimates_cut %>% dplyr::filter(mat_dist == 0.2,disp_fun=="brownian",shortedge==T), aes(
+  #   y = sigma_d,
+  #   x=simplified,group=rep,col="branches \n>100 generations \nexcluded"),lty=2)+
   theme_minimal() +
   scale_y_log10() +
   labs(shape="simulation replicate",
        col="",x="",y = TeX("$\\hat{\\sigma}_{ML}$")) -> estimates.plot.cut.2
 
-#save.image(file = "estimation.RData")
+save.image(file = "estimation.RData")
 
 
 estimates.plot.matdist %>% ggsave(filename=paste0("figs/",
