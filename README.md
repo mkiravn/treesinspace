@@ -20,7 +20,7 @@ The `new_scripts` directory contains files needed for the analysis. Namely:
 
 * `exploration.R`: exploring the effects of dispersal distribution, competition distance and mating distance.
 * `diffusion.R`: comparing a theoretical model of mate choice to simulated results. This also uses data from `data/ThirdSidePDF.tsv`, produced by `thirdsidepdf.nb`.
-* `estimation.R`: investigating the accuracy of ML estimation of $\sigma$ under a brownian motion model
+* `estimation.R`: investigating the accuracy of ML estimation of $\sigma$ under a brownian motion model. The `estimation_othersig.R` script performs a similar analysis, under a range of dispersal distances.
 * `illustration.R`: a visualisation of the effects of competition and mate choice scale.
 
 These scripts will output figures into a `figs` directory, and label them with the current date. 
