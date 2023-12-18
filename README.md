@@ -1,6 +1,6 @@
 # treesinspace
 
-## Exploring the effects of ecological parameters on the spatial structure of genetic tree sequences
+## Exploring the Effects of Ecological Parameters on the Spatial Structure of Genealogies
 
 Welcome to the `treesinspace` package. This will supply everything needed to reproduce the analyses and figures included in the manuscript. The code was written by M. Ianni-Ravn (mianniravn@uchicago.edu), with abundant help from Martin Petr and the rest of the Racimo lab at UCPH. The project extensively makes use of the R package `slendr` (current version at https://cran.r-project.org/web/packages/slendr/index.html). This will be installed, if not already present, when opening this R project. 
 
