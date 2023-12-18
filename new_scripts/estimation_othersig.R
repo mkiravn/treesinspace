@@ -40,7 +40,7 @@ tree_data <- tree_data %>%
 all_connections <- retrieve_connections(trees,trees_us,pars)
 all_connections <- all_connections %>% mutate(edge_gens=child_time-parent_time)
 
-all_connections %>% write_delim("all_connections_1507.tsv",delim="\t")
+all_connections %>% write_delim("all_connections_othersig.tsv",delim="\t")
 
 pwds <- res$pairs
 pwds %>%
